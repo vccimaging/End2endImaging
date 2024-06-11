@@ -1,29 +1,28 @@
-""" Lens surface class.
-
-Technical Paper:
-Yang, Xinge and Fu, Qiang and Heidrich, Wolfgang, "Curriculum learning for ab initio deep learned refractive optics," ArXiv preprint (2023)
-
-This code and data is released under the Creative Commons Attribution-NonCommercial 4.0 International license (CC BY-NC.) In a nutshell:
-    # The license is only for non-commercial use (commercial licenses can be obtained from authors).
-    # The material is provided as-is, with no warranties whatsoever.
-    # If you publish any code, data, or scientific work based on this, please cite our work.
+""" Geometric surfaces for ray tracing.
 """
 import torch
+import math
 import numpy as np
 import torch.nn.functional as nnF
+import matplotlib.pyplot as plt
 
 from .basics import *
-from .utils import *
+from .materials import Material
+from ..utils import *
 
 class Surface(DeepObj):
     def __init__(self, r, d, mat1, mat2, is_square=False, device=DEVICE):
         super(Surface, self).__init__()
         self.d = d if torch.is_tensor(d) else torch.Tensor([d])
+        self.d_perturb = 0.0
+
         self.r = float(r)   # r is not differentiable
+        self.r_perturb = 0.0
         self.is_square = is_square
         if is_square:
-            self.h = r * np.sqrt(2)
-            self.w = r * np.sqrt(2)
+            self.h = r * math.sqrt(2)
+            self.w = r * math.sqrt(2)
+        
 
         self.mat1 = Material(mat1)
         self.mat2 = Material(mat2)        
@@ -40,7 +39,7 @@ class Surface(DeepObj):
     # Intersection and Refraction
     # ==============================
     def ray_reaction(self, ray):
-        """ Compute output ray after intersection and refraction.
+        """ Compute output ray after intersection and refraction with a surface.
         """
         # Determine ray direction and refractive index
         wvln = ray.wvln
@@ -53,18 +52,21 @@ class Surface(DeepObj):
             n2 = self.mat1.ior(wvln)
 
         # Intersection
-        ray = self._intersect(ray, n1)
+        ray = self.intersect(ray, n1)
 
         # Refraction
-        ray = self._refract(ray, n1 / n2)
+        ray = self.refract(ray, n1 / n2)
 
         return ray
     
-    def _intersect(self, ray, n = 1.0):
-        """ Solve ray-surface intersection and update ray data.
+    def intersect(self, ray, n):
+        """ Solve ray-surface intersection and update ray position and opl.
+
+        Args:
+            n (float, optional): refractive index. Defaults to 1.0.
         """
         # Solve intersection time t by Newton's method
-        t, valid = self._newtons_method(ray)
+        t, valid = self.newtons_method(ray)
 
         # Update rays
         new_o = ray.o + ray.d * t.unsqueeze(-1)
@@ -80,11 +82,15 @@ class Surface(DeepObj):
 
         return ray
     
-    def _newtons_method(self, ray):
-        """ Solve intersection by Newton's method. This function will only update valid rays.
+    def newtons_method(self, ray):
+        """ Solve intersection by Newton's method. 
+        
+            This function will only update valid rays.
         """
+        d_surf = self.d + self.d_perturb
+
         # 1. inital guess of t
-        t0 = (self.d - ray.o[...,2]) / ray.d[...,2]   # if the shape of aspheric surface is strange, will hit the back surface region instead 
+        t0 = (d_surf - ray.o[...,2]) / ray.d[...,2]   # if the shape of aspheric surface is strange, will hit the back surface region instead 
 
         # 2. use Newton's method to update t to find the intersection points (non-differentiable)
         with torch.no_grad():
@@ -96,9 +102,9 @@ class Surface(DeepObj):
 
                 new_o = ray.o + ray.d * t.unsqueeze(-1)
                 new_x, new_y = new_o[...,0], new_o[...,1]
-                valid = self._valid(new_x, new_y) & (ray.ra>0)
+                valid = self.valid(new_x, new_y) & (ray.ra>0)
                 
-                ft = self.sag(new_x, new_y, valid) + self.d - new_o[...,2]
+                ft = self.sag(new_x, new_y, valid) + d_surf - new_o[...,2]
                 dxdt, dydt, dzdt = ray.d[...,0], ray.d[...,1], ray.d[...,2]
                 dfdx, dfdy, dfdz = self.dfdxyz(new_x, new_y)
                 dfdt = dfdx * dxdt + dfdy * dydt + dfdz * dzdt
@@ -111,9 +117,9 @@ class Surface(DeepObj):
 
         new_o = ray.o + ray.d * t.unsqueeze(-1)
         new_x, new_y = new_o[...,0], new_o[...,1]
-        valid = self._valid(new_x, new_y) & (ray.ra > 0)
+        valid = self.valid(new_x, new_y) & (ray.ra > 0)
         
-        ft = self.sag(new_x, new_y, valid) + self.d - new_o[...,2]
+        ft = self.sag(new_x, new_y, valid) + d_surf - new_o[...,2]
         dxdt, dydt, dzdt = ray.d[...,0], ray.d[...,1], ray.d[...,2]
         dfdx, dfdy, dfdz = self.dfdxyz(new_x, new_y)
         dfdt = dfdx * dxdt + dfdy * dydt + dfdz * dzdt
@@ -122,27 +128,27 @@ class Surface(DeepObj):
         # determine valid rays
         with torch.no_grad():
             new_x, new_y = new_o[...,0], new_o[...,1]
-            valid = self._valid_within_boundary(new_x, new_y) & (ray.ra > 0)
-            ft = self.sag(new_x, new_y, valid) + self.d - new_o[...,2]
+            valid = self.valid_within_boundary(new_x, new_y) & (ray.ra > 0)
+            ft = self.sag(new_x, new_y, valid) + d_surf - new_o[...,2]
             valid = valid & (torch.abs(ft.detach()) < self.NEWTONS_TOLERANCE_TIGHT) & (t > 0)   # points valid & points accurate & donot go back
         
         return t, valid
 
 
-    def _refract(self, ray, eta):
-        """ Snell's law (surface normal n defined along the positive z axis)
-            https://physics.stackexchange.com/a/436252/104805
-            https://www.scratchapixel.com/lessons/3d-basic-rendering/introduction-to-shading/reflection-refraction-fresnel
+    def refract(self, ray, eta):
+        """ Calculate refractive ray according to Snell's law.
+        
+            Snell's law (surface normal n defined along the positive z axis):
+                https://physics.stackexchange.com/a/436252/104805
+                https://www.scratchapixel.com/lessons/3d-basic-rendering/introduction-to-shading/reflection-refraction-fresnel
+                We follow the first link and normal vector should have the same direction with incident ray(veci), but by default it points to left. We use the second link to check.
 
-            We follow the first link and normal vector should have the same direction with incident ray(veci), but by default it
-            points to left. We use the second link to check.
-
-            veci: incident ray
-            vect: refractive ray
-            eta: relevant refraction coefficient, eta = eta_i/eta_t
+                veci: incident ray
+                vect: refractive ray
+                eta: relevant refraction coefficient, eta = eta_i/eta_t
         """
         # Compute normal vectors
-        n = self._normal(ray)
+        n = self.normal(ray)
         forward = (ray.d * ray.ra.unsqueeze(-1))[...,2].sum() > 0
         if forward:
             n = - n
@@ -153,21 +159,27 @@ class Surface(DeepObj):
         # TIR
         valid = (eta**2 * (1 - cosi**2) < 1) & (ray.ra > 0)
 
-        sr = torch.sqrt(1 - eta**2 * (1 - cosi.unsqueeze(-1)**2) * valid.unsqueeze(-1))  # square root
+        sr = torch.sqrt(1 - eta**2 * (1 - cosi.unsqueeze(-1)**2) * valid.unsqueeze(-1) + EPSILON)  # square root
         
         # First term: vertical. Second term: parallel. Already normalized if both n and ray.d are normalized. 
         new_d = sr * n + eta * (ray.d - cosi.unsqueeze(-1) * n)
         new_d[~valid] = ray.d[~valid]
-        
+
+        new_obliq = torch.sum(new_d * ray.d, axis=-1)
+        new_obliq[~valid] = ray.obliq[~valid]
+
         # Update valid rays
         ray.d = new_d
+        ray.obliq = new_obliq
         ray.ra = ray.ra * valid
 
         return ray
 
 
-    def _normal(self, ray):
-        """ Calculate normal vector of the surface at intersection point.
+    def normal(self, ray):
+        """ Calculate normal vector of the surface.
+
+            Normal vector points to the left by default.
         """
         x, y, z = ray.o[...,0], ray.o[...,1], ray.o[...,2]
         nx, ny, nz = self.dfdxyz(x, y)
@@ -191,7 +203,7 @@ class Surface(DeepObj):
             z (tensor): z = sag(x, y)
         """
         if valid is None:
-            valid = self._valid(x, y)
+            valid = self.valid(x, y)
         
         x, y = x * valid, y * valid
         return self.g(x, y)
@@ -199,7 +211,7 @@ class Surface(DeepObj):
     def dfdxyz(self, x, y, valid=None):
         """ Compute derivatives of surface function. Surface function: f(x, y, z): z - g(x, y) = 0
 
-            NOTE: this function only works for surfaces which can be written as z = g(x, y). For implicit surfaces, we need to compute derivatives (df/dx, df/dy, df/dz).
+            This function only works for surfaces which can be written as z = g(x, y). For implicit surfaces, we need to compute derivatives (df/dx, df/dy, df/dz).
 
         Args:
             x (tensor): x coordinate
@@ -211,7 +223,7 @@ class Surface(DeepObj):
             dfdz (tensor): df / dz
         """
         if valid is None:
-            valid = self._valid(x, y)
+            valid = self.valid(x, y)
         
         x, y = x * valid, y * valid
         dx, dy = self.dgd(x, y)
@@ -220,7 +232,9 @@ class Surface(DeepObj):
     def g(self, x, y):
         """ Calculate sag (z) of the surface. z = f(x, y)
 
-            NOTE: Valid term is used to avoid NaN when x, y are super large, which happens in spherical and aspherical surfaces. But if you want to calculate r = sqrt(x**2, y**2), this will cause another NaN error when calculating dr/dx = x / sqrt(x**2 + y**2). So be careful for this!!!
+            Valid term is used to avoid NaN when x, y are super large, which happens in spherical and aspherical surfaces. 
+            
+            If you want to calculate r = sqrt(x**2, y**2), this will cause another NaN error when calculating dr/dx = x / sqrt(x**2 + y**2). So be careful for this!!!
 
         Args:
             x (tensor): x coordinate
@@ -248,17 +262,17 @@ class Surface(DeepObj):
     def is_valid(self, p):
         return (self.sdf_approx(p) < 0.0).bool()
 
-    def _valid_within_boundary(self, x, y):
+    def valid_within_boundary(self, x, y):
         """ Valid points within the boundary of the surface.
         """
         if self.is_square:
-            valid = self._valid(x, y) & (torch.abs(x) <= self.w/2) & (torch.abs(y) <= self.h/2)
+            valid = self.valid(x, y) & (torch.abs(x) <= self.w/2) & (torch.abs(y) <= self.h/2)
         else:
-            valid = self._valid(x, y) & ((x**2 + y**2) <= self.r**2)
+            valid = self.valid(x, y) & ((x**2 + y**2) <= self.r**2)
         
         return valid
     
-    def _valid(self, x, y):
+    def valid(self, x, y):
         """ Valid points NOT considering the boundary of the surface.
         """
         return torch.ones_like(x, dtype=torch.bool)
@@ -329,12 +343,29 @@ class Surface(DeepObj):
         raise NotImplementedError()
     
     @torch.no_grad()
-    def perturb(self, thickness_precision=0.0005, diameter_precision=0.001):
+    def perturb(self, d_precision=0.0005, r_precision=0.001):
         """ Randomly perturb surface parameters to simulate manufacturing errors.
         """
-        raise Exception('This function needs to be implemented in the child class.')
-        self.r += np.random.randn() * diameter_precision
-        self.d += torch.randn() * thickness_precision
+        self.r_perturb = self.r.item() * float(np.random.randn() * r_precision)
+        self.d_perturb = float(torch.randn() * d_precision)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 class Aperture(Surface):
@@ -375,11 +406,13 @@ class Aperture(Surface):
         # ------------------------------------- 
         if self.diffraction:
             raise Exception('Unimplemented diffraction method.')
-            # We can use Huygens-Fresnel principle to determine the diffractive rays, but how to make this process differentiable???? Using Heisenberg uncertainty principle???
-            # Ref: Simulating multiple diffraction in imaging systems using a path integration method
-            # Conventional method process the aperture by using the exit pupil + free space propagation, if that we donot need this class.
 
         return ray
+    
+    def g(self, x, y):
+        """ Compute surface height.
+        """
+        return torch.zeros_like(x)
     
     def surf_dict(self):
         """ Return a dict of surface.
@@ -390,8 +423,6 @@ class Aperture(Surface):
             'd': self.d.item(),
             'is_square': self.is_square,
             'diffraction': self.diffraction,
-            'mat1': 'air',
-            'mat2': 'air',
             }
         return surf_dict
     
@@ -517,7 +548,7 @@ class Aspheric(Surface):
         """ Compute surface height.
         """
         r2 = x**2 + y**2
-        total_surface = r2 * self.c / (1 + torch.sqrt(1 - (1 + self.k) * r2 * self.c**2))
+        total_surface = r2 * self.c / (1 + torch.sqrt(1 - (1 + self.k) * r2 * self.c**2 + EPSILON))
 
         if self.ai_degree > 0:
             if self.ai_degree == 4:
@@ -531,7 +562,7 @@ class Aspheric(Surface):
             elif self.ai_degree == 8:
                 total_surface = total_surface + (self.ai2 + (self.ai4 + (self.ai6 + (self.ai8 + (self.ai10 + (self.ai12 + (self.ai14 + self.ai16 * r2)* r2) * r2) * r2) * r2) * r2) * r2) * r2
             else:
-                for i in range(1, self.ai_degree+1):
+                for i in range(1, self.ai_degree + 1):
                     exec(f'total_surface += self.ai{2*i} * r2 ** {i}')
 
         return total_surface
@@ -541,7 +572,7 @@ class Aspheric(Surface):
         """ Compute surface height derivatives to x and y.
         """
         r2 = x**2 + y**2
-        sf = torch.sqrt(1 - (1 + self.k) * r2 * self.c**2)
+        sf = torch.sqrt(1 - (1 + self.k) * r2 * self.c**2 + EPSILON)
         dsdr2 = (1 + sf + (1 + self.k) * r2 * self.c**2 / 2 / sf) * self.c / (1 + sf)**2
 
         if self.ai_degree > 0:
@@ -551,15 +582,17 @@ class Aspheric(Surface):
                 dsdr2 = dsdr2 + self.ai2 + 2 * self.ai4 * r2 + 3 * self.ai6 * r2 ** 2 + 4 * self.ai8 * r2 ** 3 + 5 * self.ai10 * r2 ** 4
             elif self.ai_degree == 6:
                 dsdr2 = dsdr2 + self.ai2 + 2 * self.ai4 * r2 + 3 * self.ai6 * r2 ** 2 + 4 * self.ai8 * r2 ** 3 + 5 * self.ai10 * r2 ** 4 + 6 * self.ai12 * r2 ** 5
+            elif self.ai_degree == 7:
+                dsdr2 = dsdr2 + self.ai2 + 2 * self.ai4 * r2 + 3 * self.ai6 * r2 ** 2 + 4 * self.ai8 * r2 ** 3 + 5 * self.ai10 * r2 ** 4 + 6 * self.ai12 * r2 ** 5 + 7 * self.ai14 * r2 ** 6
             elif self.ai_degree == 8:
                 dsdr2 = dsdr2 + self.ai2 + (2 * self.ai4 + (3 * self.ai6 + (4 * self.ai8 + (5 * self.ai10 + (6 * self.ai12 + (7 * self.ai14 + 8 * self.ai16 * r2)* r2)* r2)* r2) * r2) * r2) * r2 
             else:
-                for i in range(1, self.ai_degree+1):
+                for i in range(1, self.ai_degree + 1):
                     exec(f'dsdr2 += {i} * self.ai{2*i} * r2 ** {i-1}')
 
         return dsdr2 * 2 * x, dsdr2 * 2 * y
 
-    def _valid(self, x, y):
+    def valid(self, x, y):
         """ Invalid when shape is non-defined.
         """
         if self.k > -1:
@@ -579,7 +612,7 @@ class Aspheric(Surface):
 
         return max_height
 
-    def get_optimizer_params(self, lr=[1e-4, 1e-4, 1e-1, 1e-4], decay=0.1):
+    def get_optimizer_params(self, lr=[1e-4, 1e-4, 1e-1, 1e-2], decay=0.01):
         """ Get optimizer parameters for different parameters.
 
         Args:
@@ -593,50 +626,53 @@ class Aspheric(Surface):
         if lr[0] > 0 and self.c != 0:
             self.c.requires_grad_(True)
             params.append({'params': [self.c], 'lr': lr[0]})
+        
         if lr[1] > 0:
             self.d.requires_grad_(True)
             params.append({'params': [self.d], 'lr': lr[1]})
+        
         if lr[2] > 0 and self.k != 0:
             params.append({'params': [self.k], 'lr': lr[2]})
+        
         if lr[3] > 0:
             if self.ai_degree == 4:
                 self.ai2.requires_grad_(True)
                 self.ai4.requires_grad_(True)
                 self.ai6.requires_grad_(True)
                 self.ai8.requires_grad_(True)
-                params.append({'params': [self.ai2], 'lr': lr[3] / decay})
-                params.append({'params': [self.ai4], 'lr': lr[3]})
-                params.append({'params': [self.ai6], 'lr': lr[3] * decay})
-                params.append({'params': [self.ai8], 'lr': lr[3] * decay**2})
-            if self.ai_degree == 5:
+                params.append({'params': [self.ai2], 'lr': lr[3]})
+                params.append({'params': [self.ai4], 'lr': lr[3] * decay})
+                params.append({'params': [self.ai6], 'lr': lr[3] * decay**2})
+                params.append({'params': [self.ai8], 'lr': lr[3] * decay**3})
+            elif self.ai_degree == 5:
                 self.ai2.requires_grad_(True)
                 self.ai4.requires_grad_(True)
                 self.ai6.requires_grad_(True)
                 self.ai8.requires_grad_(True)
                 self.ai10.requires_grad_(True)
-                params.append({'params': [self.ai2], 'lr': lr[3] / decay})
-                params.append({'params': [self.ai4], 'lr': lr[3]})
-                params.append({'params': [self.ai6], 'lr': lr[3] * decay})
-                params.append({'params': [self.ai8], 'lr': lr[3] * decay**2})
-                params.append({'params': [self.ai10], 'lr': lr[3] * decay**3})
-            if self.ai_degree == 6:
+                params.append({'params': [self.ai2], 'lr': lr[3]})
+                params.append({'params': [self.ai4], 'lr': lr[3] * decay})
+                params.append({'params': [self.ai6], 'lr': lr[3] * decay**2})
+                params.append({'params': [self.ai8], 'lr': lr[3] * decay**3})
+                params.append({'params': [self.ai10], 'lr': lr[3] * decay**4})
+            elif self.ai_degree == 6:
                 self.ai2.requires_grad_(True)
                 self.ai4.requires_grad_(True)
                 self.ai6.requires_grad_(True)
                 self.ai8.requires_grad_(True)
                 self.ai10.requires_grad_(True)
                 self.ai12.requires_grad_(True)
-                params.append({'params': [self.ai2], 'lr': lr[3] / decay})
-                params.append({'params': [self.ai4], 'lr': lr[3]})
-                params.append({'params': [self.ai6], 'lr': lr[3] * decay})
-                params.append({'params': [self.ai8], 'lr': lr[3] * decay**2})
-                params.append({'params': [self.ai10], 'lr': lr[3] * decay**3})
-                params.append({'params': [self.ai12], 'lr': lr[3] * decay**4})
+                params.append({'params': [self.ai2], 'lr': lr[3]})
+                params.append({'params': [self.ai4], 'lr': lr[3] * decay})
+                params.append({'params': [self.ai6], 'lr': lr[3] * decay**2})
+                params.append({'params': [self.ai8], 'lr': lr[3] * decay**3})
+                params.append({'params': [self.ai10], 'lr': lr[3] * decay**4})
+                params.append({'params': [self.ai12], 'lr': lr[3] * decay**5})
             else:
-                for i in range(2, self.ai_degree + 1):
+                for i in range(1, self.ai_degree + 1):
                     exec(f'self.ai{2*i}.requires_grad_(True)')
-                    exec(f'params.append({{\'params\': [self.ai{2*i}], \'lr\': lr[3] / decay**{i-1}}})')
-        
+                    exec(f'params.append({{\'params\': [self.ai{2*i}], \'lr\': lr[3] * decay**{i-1}}})')
+
         return params
 
 
@@ -854,13 +890,419 @@ class Cubic(Surface):
         }
 
 
+class DOE_GEO(Surface):
+    """ Kinoform and binary diffractive surfaces for ray tracing.
+
+        https://support.zemax.com/hc/en-us/articles/1500005489061-How-diffractive-surfaces-are-modeled-in-OpticStudio
+    """
+    def __init__(self, l, d, thickness=0.5, glass='test', param_model='binary2', device=DEVICE):
+        Surface.__init__(self, l / np.sqrt(2), d, mat1='air', mat2='air', is_square=True, device=device)
+
+        # DOE geometry
+        self.w, self.h = l, l
+        self.r = l / float(np.sqrt(2))
+        self.l = l
+        self.thickness = thickness
+        self.glass = glass
+
+        # Use ray tracing to simulate diffraction, the same as Zemax
+        self.diffraction = False
+        self.diffraction_order = 1
+        print('DOE_GEO initialization: diffraction is not activated.')
+        
+        self.to(device)
+        self.init_param_model(param_model)
+
+
+    def init_param_model(self, param_model='binary2'):
+        self.param_model = param_model
+        if self.param_model == 'fresnel':
+            # Focal length at 550nm
+            self.f0 = torch.tensor([100.0])
+        
+        elif self.param_model == 'binary2':
+            # Zemax binary2 surface type
+            self.order2 = torch.tensor([0.0])
+            self.order4 = torch.tensor([0.0])
+            self.order6 = torch.tensor([0.0])
+            self.order8 = torch.tensor([0.0])
+        
+        elif self.param_model == 'poly1d':
+            rand_value = np.random.rand(6) * 0.001
+            self.order2 = torch.tensor(rand_value[0])
+            self.order3 = torch.tensor(rand_value[1])
+            self.order4 = torch.tensor(rand_value[2])
+            self.order5 = torch.tensor(rand_value[3])
+            self.order6 = torch.tensor(rand_value[4])
+            self.order7 = torch.tensor(rand_value[5])
+        
+        elif self.param_model == 'grating':
+            # A grating surface
+            self.theta = torch.tensor([0.0])    # angle from x-axis to grating vector
+            self.alpha = torch.tensor([0.0])    # slope of the grating
+        
+        else: 
+            raise Exception('Unsupported parameter model!')
+
+        self.to(self.device)
+
+
+    def activate_diffraction(self, diffraction_order=1):
+        self.diffraction = True
+        self.diffraction_order = diffraction_order
+        print('Diffraction of DOE in ray tracing is enabled.')
+
+    # ==============================
+    # Computation (ray tracing) 
+    # ==============================
+    def ray_reaction(self, ray):
+        """ Ray reaction on DOE surface. Imagine the DOE as a wrapped positive convex lens for debugging. 
+
+            1, The phase φ in radians adds to the optical path length of the ray
+            2, The gradient of the phase profile (phase slope) change the direction of rays.
+
+            https://support.zemax.com/hc/en-us/articles/1500005489061-How-diffractive-surfaces-are-modeled-in-OpticStudio
+        """
+        forward = (ray.d * ray.ra.unsqueeze(-1))[...,2].sum() > 0
+
+        # Intersection
+        t = (self.d - ray.o[...,2]) / ray.d[...,2]
+        new_o = ray.o + t.unsqueeze(-1) * ray.d
+        # valid = (new_o[...,0].abs() <= self.h/2) & (new_o[...,1].abs() <= self.w/2) & (ray.ra > 0) # square
+        valid = (torch.sqrt(new_o[...,0]**2 + new_o[...,1]**2) <= self.r) & (ray.ra > 0)    # circular
+        new_o[~valid] = ray.o[~valid]
+        ray.o = new_o
+        ray.ra = ray.ra * valid
+
+        if ray.coherent:
+            # OPL change
+            new_opl = ray.opl + t
+            new_opl[~valid] = ray.opl[~valid]
+            ray.opl = new_opl
+
+        if self.diffraction:
+            # Diffraction 1: DOE phase modulation
+            if ray.coherent:
+                phi = self.phi(ray.o[...,0], ray.o[...,1])
+                new_opl = ray.opl + phi * (ray.wvln * 1e-3) / (2 * np.pi)
+                new_opl[~valid] = ray.opl[~valid]
+                ray.opl = new_opl
+
+            # Diffraction 2: bend rays
+            # Perpendicular incident rays are diffracted following (1) grating equation and (2) local grating approximation
+            dphidx, dphidy = self.dphi_dxy(ray.o[...,0], ray.o[...,1])
+
+            if forward:
+                new_d_x = ray.d[..., 0] + (ray.wvln * 1e-3) / (2 * np.pi) * dphidx * self.diffraction_order
+                new_d_y = ray.d[..., 1] + (ray.wvln * 1e-3) / (2 * np.pi) * dphidy * self.diffraction_order
+            else:
+                new_d_x = ray.d[..., 0] - (ray.wvln * 1e-3) / (2 * np.pi) * dphidx * self.diffraction_order
+                new_d_y = ray.d[..., 1] - (ray.wvln * 1e-3) / (2 * np.pi) * dphidy * self.diffraction_order
+
+            new_d = torch.stack([new_d_x, new_d_y, ray.d[..., 2]], dim=-1)
+            new_d = nnF.normalize(new_d, p=2, dim=-1)
+            
+            new_d[~valid] = ray.d[~valid]
+            ray.d = new_d
+
+        return ray
+    
+    def phi(self, x, y):
+        """ Reference phase map at design wavelength (independent to wavelength). We have the same definition of phase (phi) as Zemax.
+        """
+        x_norm = x / self.r
+        y_norm = y / self.r
+        r = torch.sqrt(x_norm**2 + y_norm**2 + EPSILON)
+        
+        if self.param_model == 'fresnel':
+            phi = - 2 * np.pi * torch.fmod((x**2 + y**2) / (2 * 0.55e-3 * self.f0), 1) # unit [mm]
+        
+        elif self.param_model == 'binary2':
+            phi = self.order2 * r**2 + self.order4 * r**4 + self.order6 * r**6 + self.order8 * r**8
+        
+        elif self.param_model == 'poly1d':
+            phi_even = self.order2 * r**2 + self.order4 * r**4 + self.order6 * r**6
+            phi_odd =  self.order3 * (x_norm**3 + y_norm**3) + self.order5 * (x_norm**5 + y_norm**5) + self.order7 * (x_norm**7 + y_norm**7)
+            phi = phi_even + phi_odd
+
+        elif self.param_model == 'grating':
+            phi = self.alpha * (x_norm * torch.sin(self.theta) + y_norm * torch.cos(self.theta))
+        
+        else:
+            raise NotImplementedError
+        
+        phi = torch.remainder(phi, 2 * np.pi)
+        return phi
+    
+    def dphi_dxy(self, x, y):
+        """ Calculate phase derivatives (dphi/dx, dphi/dy) for given points.
+        """
+        x_norm = x / self.r
+        y_norm = y / self.r
+        r = torch.sqrt(x_norm**2 + y_norm**2 + EPSILON)
+        
+        if self.param_model == 'fresnel':
+            dphidx = - 2 * np.pi * x / (0.55e-3 * self.f0) # unit [mm]
+            dphidy = - 2 * np.pi * y / (0.55e-3 * self.f0)
+        
+        elif self.param_model == 'binary2':
+            dphidr = 2 * self.order2 * r + 4 * self.order4 * r**3 + 6 * self.order6 * r**5 + 8 * self.order8 * r**7
+            dphidx = dphidr * x_norm / r / self.r
+            dphidy = dphidr * y_norm / r / self.r
+        
+        elif self.param_model == 'poly1d':
+            dphi_even_dr = 2 * self.order2 * r + 4 * self.order4 * r**3 + 6 * self.order6 * r**5
+            dphi_even_dz = dphi_even_dr * x_norm / r / self.r
+            dphi_even_dy = dphi_even_dr * y_norm / r / self.r
+            
+            dphi_odd_dx =  (3 * self.order3 * x_norm**2 + 5 * self.order5 * x_norm**4 + 7 * self.order7 * x_norm**6) / self.r
+            dphi_odd_dy =  (3 * self.order3 * y_norm**2 + 5 * self.order5 * y_norm**4 + 7 * self.order7 * y_norm**6) / self.r
+            
+            dphidx = dphi_even_dz + dphi_odd_dx
+            dphidy = dphi_even_dy + dphi_odd_dy
+
+        elif self.param_model == 'grating':
+            dphidx = self.alpha * torch.sin(self.theta) / self.r
+            dphidy = self.alpha * torch.cos(self.theta) / self.r
+        
+        else:
+            raise NotImplementedError
+
+        return dphidx, dphidy
+    
+    def g(self, x, y):
+        raise Exception('self.g() function is meaningless for phase DOE, use self.phi() function.')
+    
+    def dgd(self, x, y):
+        raise Exception('self.dgd() function is meaningless for phase DOE, use self.dphidxy() function.')
+
+    def surface(self, x, y, max_offset=0.2):
+        """ When drawing the lens setup, this function is called to compute the surface height.
+
+            Here we use a fake height ONLY for drawing.
+        """    
+        roc = self.l
+        r = torch.sqrt(x**2 + y**2 + EPSILON)
+        sag = roc * (1 - torch.sqrt(1 - r**2 / roc**2))
+        sag = max_offset - torch.fmod(sag, max_offset)
+        return sag
+    
+    def draw_phase_map(self, save_name='./DOE_phase_map.png'):
+        """ Draw height map. Range from [0, max_height].
+        """
+        x, y = torch.meshgrid(torch.linspace(-self.l/2, self.l/2, 2000), torch.linspace(self.l/2, -self.l/2, 2000), indexing='xy')
+        x, y = x.to(self.device), y.to(self.device)
+        pmap = self.phi(x, y)
+        # pmap_q = self.pmap_quantize()
+
+        fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+        ax[0].imshow(pmap.cpu().numpy(), vmin=0, vmax=2 * np.pi)
+        ax[0].set_title(f'Phase map 0.55um', fontsize=10)
+        ax[0].grid(False)
+        fig.colorbar(ax[0].get_images()[0])
+        
+        # ax[1].imshow(pmap_q.cpu().numpy(), vmin=0, vmax=2 * np.pi)
+        # ax[1].set_title(f'Quantized phase map ({self.wvln0}um)', fontsize=10)
+        # ax[1].grid(False)
+        # fig.colorbar(ax[1].get_images()[0])
+
+        fig.savefig(save_name, dpi=600, bbox_inches='tight')
+        plt.close(fig)
+
+    # ==============================
+    # Optimization and other functions
+    # ==============================
+    def activate_grad(self, activate=True):
+        """ Activate gradient for all parameters.
+        """
+        if self.param_model == 'binary2':
+            self.order2.requires_grad = activate
+            self.order4.requires_grad = activate
+            self.order6.requires_grad = activate
+        elif self.param_model == 'poly1d':
+            self.order2.requires_grad = activate
+            self.order3.requires_grad = activate
+            self.order4.requires_grad = activate
+            self.order5.requires_grad = activate
+            self.order6.requires_grad = activate
+            self.order7.requires_grad = activate
+        elif self.param_model == 'grating':
+            self.theta.requires_grad = activate
+            self.alpha.requires_grad = activate
+        else:
+            raise NotImplementedError
+        
+    def get_optimizer_params(self, lr=None):
+        """ Generate optimizer parameters.
+        """
+        self.activate_grad()
+        params = []
+        if self.param_model == 'binary2':
+            lr = 0.001 if lr is None else lr
+            params.append({'params': [self.order2], 'lr': lr})
+            params.append({'params': [self.order4], 'lr': lr})
+            params.append({'params': [self.order6], 'lr': lr})
+            params.append({'params': [self.order8], 'lr': lr})
+
+        elif self.param_model == 'poly1d':
+            lr = 0.001 if lr is None else lr
+            params.append({'params': [self.order2], 'lr': lr})
+            params.append({'params': [self.order3], 'lr': lr})
+            params.append({'params': [self.order4], 'lr': lr})
+            params.append({'params': [self.order5], 'lr': lr})
+            params.append({'params': [self.order6], 'lr': lr})
+            params.append({'params': [self.order7], 'lr': lr})
+
+        elif self.param_model == 'grating':
+            lr = 0.1 if lr is None else lr
+            params.append({'params': [self.theta], 'lr': lr})
+            params.append({'params': [self.alpha], 'lr': lr})
+
+        else:
+            raise NotImplementedError
+        
+        return params
+
+    def get_optimizer(self, lr=None):
+        """ Generate optimizer.
+
+        Args:
+            lr (float, optional): Learning rate. Defaults to 1e-3.
+            iterations (float, optional): Iterations. Defaults to 1e4.
+        """
+        assert self.diffraction, 'Diffraction is not activated yet.'
+        params = self.get_optimizer_params(lr)
+        optimizer = torch.optim.Adam(params)
+        return optimizer
+
+    def save_ckpt(self, save_path='./doe.pth'):
+        """ Save DOE height map.
+        """
+        if self.param_model == 'binary2':
+            torch.save({
+                'param_model': self.param_model,
+                'order2': self.order2.clone().detach().cpu(),
+                'order4': self.order4.clone().detach().cpu(),
+                'order6': self.order6.clone().detach().cpu(),
+                'order8': self.order8.clone().detach().cpu(),
+            }, save_path
+            )
+        elif self.param_model == 'poly1d':
+            torch.save({
+                'param_model': self.param_model,
+                'order2': self.order2.clone().detach().cpu(),
+                'order3': self.order3.clone().detach().cpu(),
+                'order4': self.order4.clone().detach().cpu(),
+                'order5': self.order5.clone().detach().cpu(),
+                'order6': self.order6.clone().detach().cpu(),
+                'order7': self.order7.clone().detach().cpu(),
+            }, save_path
+            )
+        elif self.param_model == 'grating':
+            torch.save({
+                'param_model': self.param_model,
+                'theta': self.theta.clone().detach().cpu(),
+                'alpha': self.alpha.clone().detach().cpu(),
+            }, save_path
+            )
+        else:
+            raise Exception('Unknown parameterization.')
+
+    def load_ckpt(self, load_path='./doe.pth'):
+        """ Load DOE height map.
+        """
+        self.diffraction = True
+        ckpt = torch.load(load_path)
+        self.param_model = ckpt['param_model']
+        if self.param_model == 'binary2' or self.param_model == 'poly_even':
+            self.param_model = 'binary2'
+            self.order2 = ckpt['order2'].to(self.device)
+            self.order4 = ckpt['order4'].to(self.device)
+            self.order6 = ckpt['order6'].to(self.device)
+            self.order8 = ckpt['order8'].to(self.device)
+        elif self.param_model == 'poly1d':
+            self.order2 = ckpt['order2'].to(self.device)
+            self.order3 = ckpt['order3'].to(self.device)
+            self.order4 = ckpt['order4'].to(self.device)
+            self.order5 = ckpt['order5'].to(self.device)
+            self.order6 = ckpt['order6'].to(self.device)
+            self.order7 = ckpt['order7'].to(self.device)
+        elif self.param_model == 'grating':
+            self.theta = ckpt['theta'].to(self.device)
+            self.alpha = ckpt['alpha'].to(self.device)
+        else:
+            raise Exception('Unknown parameterization.')
+        
+    def surf_dict(self):
+        """ Return surface parameters.
+        """
+        if self.param_model == 'fresnel':
+            surf_dict = {
+                'type': self.__class__.__name__,
+                'l': self.l,
+                'glass': self.glass,
+                'param_model': self.param_model,
+                'f0': self.f0.item(),
+                'd': self.d.item(),
+                'mat1': self.mat1.name,
+                'mat2': self.mat2.name,
+            }
+
+        elif self.param_model == 'binary2':
+            surf_dict = {
+                'type': self.__class__.__name__,
+                'l': self.l,
+                'glass': self.glass,
+                'param_model': self.param_model,
+                'order2': self.order2.item(),
+                'order4': self.order4.item(),
+                'order6': self.order6.item(),
+                'order8': self.order8.item(),
+                'd': self.d.item(),
+                'mat1': self.mat1.name,
+                'mat2': self.mat2.name,
+            }
+
+        elif self.param_model == 'poly1d':
+            surf_dict = {
+                'type': self.__class__.__name__,
+                'l': self.l,
+                'glass': self.glass,
+                'param_model': self.param_model,
+                'order2': self.order2.item(),
+                'order3': self.order3.item(),
+                'order4': self.order4.item(),
+                'order5': self.order5.item(),
+                'order6': self.order6.item(),
+                'order7': self.order7.item(),
+                'd': self.d.item(),
+                'mat1': self.mat1.name,
+                'mat2': self.mat2.name,
+            }
+
+        elif self.param_model == 'grating':
+            surf_dict = {
+                'type': self.__class__.__name__,
+                'l': self.l,
+                'glass': self.glass,
+                'param_model': self.param_model,
+                'theta': self.theta.item(),
+                'alpha': self.alpha.item(),
+                'd': self.d.item(),
+                'mat1': self.mat1.name,
+                'mat2': self.mat2.name,
+            }
+
+        return surf_dict
+
+
 class Plane(Surface):
     def __init__(self, l, d, mat1, mat2, is_square=True, device=DEVICE):
-        """ Plane surface, typically rectangle. Working as IR filter, lens cover or DOE base.
+        """ Plane surface, typically rectangle. Working as IR filter, lens cover glass or DOE base.
         """
         Surface.__init__(self, l / np.sqrt(2), d, mat1=mat1, mat2=mat2, is_square=is_square, device=device)
         
-    def _intersect(self, ray, n=1.0):
+    def intersect(self, ray, n=1.0):
         """ Solve ray-surface intersection and update ray data.
         """
         # Solve intersection
@@ -885,7 +1327,7 @@ class Plane(Surface):
 
         return ray
     
-    def _normal(self, ray):
+    def normal(self, ray):
         """ Calculate surface normal vector at intersection points.
         """
         n = torch.zeros_like(ray.d)
@@ -898,12 +1340,6 @@ class Plane(Surface):
     def dgd(self, x, y):
         return torch.zeros_like(x), torch.zeros_like(x)
     
-    def surface(self, x, y):
-        if torch.is_tensor(x):
-            return torch.zeros_like(x)
-        else:
-            return 0
-        
     def surf_dict(self):
         surf_dict = {
             'type': "Plane",
@@ -913,41 +1349,64 @@ class Plane(Surface):
         }
 
         return surf_dict
-
+    
 class Spheric(Surface):
     """ Spheric surface.
     """
     def __init__(self, c, r, d, mat1, mat2, device=DEVICE):
         super(Spheric, self).__init__(r, d, mat1, mat2, is_square=False, device=device)
         self.c = torch.tensor([c])
+
+        self.c_perturb = 0.0
+        self.d_perturb = 0.0
         self.to(device)
 
     def g(self, x, y):
         """ Compute surfaces sag z = r**2 * c / (1 - sqrt(1 - r**2 * c**2))
         """
+        c = self.c + self.c_perturb
+
         r2 = x**2 + y**2
-        sag = self.c * r2 / (1 + torch.sqrt(1 - r2 * self.c**2))
+        sag = c * r2 / (1 + torch.sqrt(1 - r2 * c**2))
         return sag
 
     def dgd(self, x, y):
         """ Compute surface sag derivatives to x and y: dz / dx, dz / dy.
         """
+        c = self.c + self.c_perturb
+
         r2 = x**2 + y**2
-        sf = torch.sqrt(1 - r2 * self.c**2)
-        dgdr2 =  self.c / (2*sf)
+        sf = torch.sqrt(1 - r2 * c**2 + EPSILON)
+        dgdr2 =  c / (2 * sf)
         return dgdr2*2*x, dgdr2*2*y
 
-    def _valid(self, x, y):
+    def valid(self, x, y):
         """ Invalid when shape is non-defined.
         """
-        valid = (x**2 + y**2 < 1 / self.c**2)
+        c = self.c + self.c_perturb
+
+        valid = ((x**2 + y**2) < 1 / c**2)
         return valid
     
     def max_height(self):
         """ Maximum valid height.
         """
-        max_height = torch.sqrt(1 / self.c**2).item() - 0.01
+        c = self.c + self.c_perturb
+
+        max_height = torch.sqrt(1 / c**2).item() - 0.01
         return max_height
+    
+    def perturb(self, d_precision=0.001, c_precision=0.001):
+        """ Randomly perturb surface parameters to simulate manufacturing errors.
+        """
+        self.c_perturb = self.c.item() * float(np.random.randn() * c_precision)
+        self.d_perturb = float(np.random.randn() * d_precision)
+
+    def no_perturb(self):
+        """ Reset perturbation.
+        """
+        self.c_perturb = 0.0
+        self.d_perturb = 0.0
     
     def get_optimizer_params(self, lr=[0.001, 0.001]):
         """ Activate gradient computation for c and d and return optimizer parameters.
@@ -961,11 +1420,14 @@ class Spheric(Surface):
         return params
 
     def surf_dict(self):
+        """ Return surface parameters.
+        """
+        roc = 1 / self.c.item() if self.c.item() != 0 else 0.0
         surf_dict = {
                 'type': 'Spheric',
                 'r': self.r,
                 'c': self.c.item(),
-                'roc': 1/self.c.item(),
+                'roc': roc,
                 'd': self.d.item(),
                 'mat1': self.mat1.name,
                 'mat2': self.mat2.name,
@@ -993,3 +1455,74 @@ class Spheric(Surface):
 """
 
         return zmx_str
+
+
+class ThinLens(Surface):
+    def __init__(self, f, r, d, mat1='air', mat2='air', is_square=False, device=DEVICE):
+        """ Thin lens surface. 
+        """
+        Surface.__init__(self, r, d, mat1=mat1, mat2=mat2, is_square=is_square, device=device)
+        self.f = torch.tensor([f])
+
+    def intersect(self, ray, n=1.0):
+        """ Solve ray-surface intersection and update rays.
+        """
+        # Solve intersection
+        t = (self.d - ray.o[...,2]) / ray.d[...,2]
+        new_o = ray.o + t.unsqueeze(-1) * ray.d
+        valid = (torch.sqrt(new_o[...,0]**2 + new_o[...,1]**2) < self.r) & (ray.ra > 0)
+
+        # Update rays
+        new_o = ray.o + ray.d * t.unsqueeze(-1)
+        
+        new_o[~valid] = ray.o[~valid]
+        ray.o = new_o
+        ray.ra = ray.ra * valid
+
+        if ray.coherent:
+            new_opl = ray.opl + t
+            new_opl[~valid] = ray.opl[~valid]
+            ray.opl = new_opl
+
+        return ray
+    
+    def refract(self, ray, n=1.0):
+        """ For a thin lens, all rays will converge to z = f plane. Therefore we trace the chief-ray (parallel-shift to surface center) to find the final convergence point for each ray. 
+        
+            For coherent ray tracing, we can think it as a Fresnel lens with infinite refractive index.
+            (1) Lens maker's equation
+            (2) Spherical lens function
+        """
+        forward = (ray.d * ray.ra.unsqueeze(-1))[...,2].sum() > 0
+
+        # Calculate convergence point
+        if forward:
+            t0 = self.f / ray.d[..., 2]
+            xy_final = ray.d[..., :2] * t0.unsqueeze(-1)
+            z_final = torch.full_like(xy_final[..., 0].unsqueeze(-1), self.d.item() + self.f.item())
+            o_final = torch.cat([xy_final, z_final], dim=-1)
+        else:
+            t0 = - self.f / ray.d[..., 2]
+            xy_final = ray.d[..., :2] * t0.unsqueeze(-1)
+            z_final = torch.full_like(xy_final[..., 0].unsqueeze(-1), self.d.item() - self.f.item())
+            o_final = torch.cat([xy_final, z_final], dim=-1)
+
+        # New ray direction
+        new_d = o_final - ray.o
+        new_d = nnF.normalize(new_d, p=2, dim=-1)
+        ray.d = new_d
+
+        # OPL change
+        if ray.coherent:
+            if forward:
+                ray.opl = ray.opl - (ray.o[..., 0]**2 + ray.o[..., 1]**2) / self.f / 2 / ray.d[..., 2]
+            else:
+                ray.opl = ray.opl + (ray.o[..., 0]**2 + ray.o[..., 1]**2) / self.f / 2 / ray.d[..., 2]
+        
+        return ray
+    
+    def g(self, x, y):
+        return torch.zeros_like(x)
+    
+    def dgd(self, x, y):
+        return torch.zeros_like(x), torch.zeros_like(x)

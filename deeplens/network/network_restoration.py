@@ -4,6 +4,10 @@
 2, MFFNet. Multi-scale Fusion Network.
 3, NAFNet.
 4, RRDBNet. Residual in Residual Dense Block Network.
+5, TODO: add diffusion models (e.g., Laura Waller's work). https://github.com/lixinustc/Awesome-diffusion-model-for-image-processing
+    i) Denoising Diffusion Restoration Models (DDRM), https://github.com/bahjat-kawar/ddrm. Very good!
+    ii) Single image super-resolution with diffusion probabilistic models, https://github.com/LeiaLi/SRDiff
+    iii) Image Restoration with Mean-Reverting Stochastic Differential Equations, https://github.com/Algolzw/image-restoration-sde. Easy to use!
 """
 import numpy as np
 import torch
@@ -394,6 +398,7 @@ class NAFNet(nn.Module):
             x = decoder(x)
 
         x = self.ending(x)
+        # x = x + inp   # FIXME: this line is comment out by me
 
         return x[:, :, :H, :W]
 
@@ -536,5 +541,103 @@ class Vgg16(torch.nn.Module):
         if layer == 3:
             return output
 
+
+
+# ====================================================================================
+# Discriminator
+# ====================================================================================
+
+def get_norm_layer(norm_type='instance'):
+    if norm_type == 'batch':
+        norm_layer = functools.partial(nn.BatchNorm2d, affine=True)
+    elif norm_type == 'instance':
+        norm_layer = functools.partial(nn.InstanceNorm2d, affine=False, track_running_stats=True)
+    else:
+        raise NotImplementedError('normalization layer [%s] is not found' % norm_type)
+    return norm_layer
+
+class NLayerDiscriminator(nn.Module):
+    def __init__(self, input_nc=3, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d, use_sigmoid=False, use_parallel=True):
+        super(NLayerDiscriminator, self).__init__()
+        self.use_parallel = use_parallel
+        if type(norm_layer) == functools.partial:
+            use_bias = norm_layer.func == nn.InstanceNorm2d
+        else:
+            use_bias = norm_layer == nn.InstanceNorm2d
+
+        kw = 4
+        padw = int(np.ceil((kw-1)/2))
+        sequence = [
+            nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw),
+            nn.LeakyReLU(0.2, True)
+        ]
+
+        nf_mult = 1
+        for n in range(1, n_layers):
+            nf_mult_prev = nf_mult
+            nf_mult = min(2**n, 8)
+            sequence += [
+                nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult,
+                          kernel_size=kw, stride=2, padding=padw, bias=use_bias),
+                norm_layer(ndf * nf_mult),
+                nn.LeakyReLU(0.2, True)
+            ]
+
+        nf_mult_prev = nf_mult
+        nf_mult = min(2**n_layers, 8)
+        sequence += [
+            nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult,
+                      kernel_size=kw, stride=1, padding=padw, bias=use_bias),
+            norm_layer(ndf * nf_mult),
+            nn.LeakyReLU(0.2, True)
+        ]
+
+        sequence += [nn.Conv2d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]
+
+        if use_sigmoid:
+            sequence += [nn.Sigmoid()]
+
+        self.model = nn.Sequential(*sequence)
+
+    def forward(self, input):
+        return self.model(input)
+
+# ----------------------------------------------------
+
+def pretrain():
+    """ Pretrain reconstruction network, because for non-convex optimization, we need very good initialization.
+    """
+    import cv2 as cv
+    from torch import optim
+    from torchvision.utils import save_image
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    x = cv.imread(f'./images/render0.png', cv.IMREAD_GRAYSCALE)
+    y = cv.imread(f'./images/flipped_newton.png', cv.IMREAD_GRAYSCALE)
+    x = torch.tensor(x/255., dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
+    y = torch.tensor(y/255., dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
+
+    net = Onelayer(c=1).to(device)
+    loss = nn.MSELoss()
+    optim = optim.Adam(net.parameters(), lr=0.01)
+
+    for i in range(30):
+        net.train()
+        optim.zero_grad()
+        y_pred = net(x)
+        L = loss(y, y_pred)
+
+        L.backward()
+        optim.step()
+
+    save_image(y_pred, 'network_final_output.png')
+    print('finish training.')
+    torch.save(net.state_dict(), './model.pkl')
+
+
+# pre-train network
+if __name__=='__main__':
+    pretrain()
 
 

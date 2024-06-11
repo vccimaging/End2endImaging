@@ -12,7 +12,7 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 import torch.nn.functional as nnF
 
-from .basics import DEVICE
+from ..optics.basics import DEVICE
 
 # ======================================
 # Basic dataset class
@@ -26,7 +26,11 @@ class ImageDataset(Dataset):
 
         self.transform = transforms.Compose([
             transforms.Resize(img_res, antialias=True),
+            # transforms.RandomResizedCrop((img_res, img_res)),
+            # transforms.AutoAugment(transforms.AutoAugmentPolicy.IMAGENET, transforms.InterpolationMode.BILINEAR),   
             transforms.ToTensor(),
+            # AddGaussianNoise(0, 0.01),
+            # AddSineNoise([img_res,img_res]),
             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         ])
 
