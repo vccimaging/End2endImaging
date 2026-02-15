@@ -22,7 +22,7 @@ from deeplens.basics import (
     DeepObj,
     init_device,
 )
-from deeplens.optics.psf import (
+from deeplens.optics.imgsim import (
     conv_psf,
     conv_psf_depth_interp,
     conv_psf_map,

@@ -27,7 +27,7 @@ from deeplens.optics.diffractive_surface import (
     ThinLens,
     Zernike,
 )
-from deeplens.optics.psf import conv_psf
+from deeplens.optics.imgsim import conv_psf
 from deeplens.optics.utils import diff_float
 from deeplens.optics.light import ComplexWave
 

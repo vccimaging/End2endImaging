@@ -34,7 +34,7 @@ from deeplens.optics.diffractive_surface import (
     Zernike,
 )
 from deeplens.optics.geometric_surface import Plane
-from deeplens.optics.monte_carlo import forward_integral
+from deeplens.optics.imgsim import forward_integral
 from deeplens.optics.phase_surface import Phase
 from deeplens.optics.utils import diff_float
 from deeplens.optics.light import AngularSpectrumMethod

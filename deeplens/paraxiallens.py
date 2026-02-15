@@ -16,7 +16,7 @@ import torch
 
 from deeplens.lens import Lens
 from deeplens.basics import DEPTH, EPSILON, PSF_KS
-from deeplens.optics.psf import conv_psf_depth_interp, conv_psf_occlusion
+from deeplens.optics.imgsim import conv_psf_depth_interp, conv_psf_occlusion
 
 
 class ParaxialLens(Lens):

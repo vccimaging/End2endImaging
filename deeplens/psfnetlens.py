@@ -22,7 +22,7 @@ from deeplens.lens import Lens
 from deeplens.network.surrogate import MLP
 from deeplens.network.surrogate.psfnet_mplconv import PSFNet_MLPConv
 from deeplens.basics import DEPTH, PSF_KS
-from deeplens.optics.psf import conv_psf_pixel, conv_psf_pixel_high_res, rotate_psf
+from deeplens.optics.imgsim import conv_psf_pixel, conv_psf_pixel_high_res, rotate_psf
 
 
 class PSFNetLens(Lens):

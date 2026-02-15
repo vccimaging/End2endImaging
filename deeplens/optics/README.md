@@ -8,24 +8,34 @@ This package is essential for:
 -   Modeling various optical components like surfaces and materials.
 -   Calculating optical performance metrics such as Point Spread Functions (PSF).
 
-## Key Modules
+## Key Modules and Sub-packages
 
--   `basics.py`: This module defines fundamental variables, constants (e.g., wavelengths, sampling densities), and the base `DeepObj` class that provides common functionalities like device placement (`.to()`) and data type conversion (`.astype()`) for other classes in the package.
+### Light propagation
 
 -   `light/ray.py`: Contains the `Ray` class, which is the cornerstone of geometric ray tracing in DeepLens. It encapsulates the properties of optical rays, including their origin, direction, wavelength, and validity.
 
 -   `light/wave.py`: Implements the `ComplexWave` class for wave optics simulations. This module includes various methods for wave propagation, such as the Angular Spectrum Method (ASM) and Rayleigh-Sommerfeld diffraction, enabling the simulation of diffraction and interference.
 
--   `psf.py`: Provides tools for calculating the Point Spread Function (PSF) of an optical system, a critical metric for assessing image quality.
+### Materials
 
--   `materials.py`: Defines a library of optical materials and their properties, which is crucial for realistic simulations.
+-   `material/`: Implements material properties and dispersion models (e.g., Sellmeier's equation) for accurate simulation across different wavelengths. Contains `materials.py` with the `Material` class and AGF/JSON glass catalogs.
 
-## Sub-packages
+### Image simulation
 
--   `geometric_surface/`: This sub-package includes classes for various types of geometric surfaces (e.g., `Aspheric`, `Conic`, `Cylindric`) that can be used to build refractive lenses.
+-   `imgsim/monte_carlo.py`: Forward and backward Monte Carlo integral functions for PSF and wavefront computation from ray tracing.
 
--   `diffractive_surface/`: Contains implementations of diffractive optical elements (DOEs) and metasurfaces.
+-   `imgsim/psf.py`: PSF convolution functions (e.g., `conv_psf`, `conv_psf_map`, `conv_psf_depth_interp`, `conv_psf_pixel`), PSF map operations, and inverse PSF solvers.
 
--   `geometric_phase/`: Provides tools for modeling geometric phase surfaces.
+### Surfaces
 
--   `material/`: Implements material properties and dispersion models (e.g., Sellmeier's equation) for accurate simulation across different wavelengths.
+-   `geometric_surface/`: Classes for geometric surfaces (e.g., `Aspheric`, `Spheric`, `Aperture`, `Plane`) used to build refractive lenses.
+
+-   `diffractive_surface/`: Implementations of diffractive optical elements (DOEs) and metasurfaces.
+
+-   `phase_surface/`: Phase-only surfaces (e.g., `Phase`, `Zernike`, `Fresnel`) for wavefront modulation.
+
+### Utilities and loss
+
+-   `utils.py`: Utility functions for the optics package.
+
+-   `loss.py`: PSF-related loss functions (`PSFLoss`, `PSFStrehlLoss`) for optical optimization.

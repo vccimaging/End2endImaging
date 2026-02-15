@@ -421,7 +421,7 @@ For large images:
 
 .. code-block:: python
 
-    from deeplens.optics.psf import conv_psf
+    from deeplens.optics.imgsim import conv_psf
 
     def render_tiled(img, depth, lens, tile_size=256, overlap=32):
         """Memory-efficient tile-based rendering."""

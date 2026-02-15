@@ -1,11 +1,11 @@
 """
-Tests for deeplens/optics/monte_carlo.py - Monte Carlo ray integration.
+Tests for deeplens/optics/imgsim/monte_carlo.py - Monte Carlo ray integration.
 """
 
 import pytest
 import torch
 
-from deeplens.optics.monte_carlo import forward_integral, assign_points_to_pixels
+from deeplens.optics.imgsim import forward_integral, assign_points_to_pixels
 from deeplens.optics.light import Ray
 
 
