@@ -36,10 +36,10 @@ The :class:`~deeplens.camera.Camera` class is the main entry point for end-to-en
     4.  **ISP**: The raw data is processed back into a displayable RGB image (demosaicing, white balance, color correction, gamma, etc.).
 - **Output**: A simulated "captured" image that mimics what a real camera would produce, along with ground truth for training.
 
-Optics Module
--------------
+Optics
+------
 
-The :class:`~deeplens.optics.lens.Lens` class is the base class for all optical systems. It defines the common interface for PSF calculation, rendering, and analysis. DeepLens provides several specialized lens types:
+The :class:`~deeplens.optics.lens.Lens` class is the base class for all optical systems, defining the common interface for PSF calculation, rendering, and analysis. These lens implementations are the primary high-level abstractions within the optics module:
 
 *   **GeoLens**: The most accurate model for refractive lens systems. Uses differentiable ray tracing to compute PSFs and simulate optical aberrations (spherical, coma, astigmatism, distortion, chromatic). Supports multi-element lens systems with aspherical surfaces.
 
