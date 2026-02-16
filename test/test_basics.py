@@ -7,7 +7,7 @@ import torch
 
 
 from deeplens import init_device
-from deeplens.optics import DeepObj
+from deeplens.optics.base import DeepObj
 from deeplens.optics.config import (
     DEPTH,
     DEFAULT_WAVE,

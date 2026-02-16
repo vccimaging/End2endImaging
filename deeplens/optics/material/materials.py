@@ -12,7 +12,7 @@ import re
 
 import torch
 
-from deeplens.optics import DeepObj
+from deeplens.optics.base import DeepObj
 
 
 # ===========================================

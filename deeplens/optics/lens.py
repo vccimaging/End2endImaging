@@ -21,7 +21,7 @@ from .config import (
     SPP_PSF,
     WAVE_RGB,
 )
-from . import DeepObj
+from .base import DeepObj
 from .imgsim import (
     conv_psf,
     conv_psf_depth_interp,

@@ -20,7 +20,7 @@ from torchvision.utils import save_image
 from tqdm import tqdm
 
 from deeplens.optics.config import DELTA
-from deeplens.optics import DeepObj
+from deeplens.optics.base import DeepObj
 
 
 # ===================================
