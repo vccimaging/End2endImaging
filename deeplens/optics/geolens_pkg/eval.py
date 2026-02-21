@@ -70,6 +70,16 @@ RGB_LABELS = ["R", "G", "B"]
 
 
 class GeoLensEval:
+    """Mixin providing classical optical performance evaluation for ``GeoLens``.
+
+    Provides spot diagrams, RMS error maps, MTF curves, distortion analysis,
+    vignetting, and field curvature — results are accuracy-aligned with
+    Zemax OpticStudio.
+
+    This class is not instantiated directly; it is mixed into
+    :class:`~deeplens.optics.geolens.GeoLens`.
+    """
+
     # ================================================================
     # Spot diagram
     # ================================================================

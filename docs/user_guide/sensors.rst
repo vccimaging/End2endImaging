@@ -9,22 +9,29 @@ Sensor Types
 RGB Sensor
 ^^^^^^^^^^
 
-Standard Bayer pattern RGB sensor with color filter array.
+Standard Bayer pattern RGB sensor with color filter array, noise model,
+and a fully invertible ISP pipeline.
 
 .. code-block:: python
 
     from deeplens.sensor import RGBSensor
-    
+
     sensor = RGBSensor(
-        resolution=(1920, 1080),    # Width x Height
-        pixel_size=4.0e-3,          # Pixel size [mm], 4 micrometers
-        bit_depth=12,               # ADC bit depth
-        qe=0.6,                     # Quantum efficiency
-        dark_current=0.01,          # Dark current [e-/s]
-        read_noise=2.0,             # Read noise [e-]
-        full_well=10000,            # Full well capacity [e-]
-        device='cuda'
+        size=(36.0, 24.0),          # Physical sensor size (W, H) [mm]
+        res=(5472, 3648),           # Pixel resolution (W, H)
+        bit=10,                     # ADC bit depth
+        black_level=64,             # Black level offset [DN]
+        bayer_pattern="rggb",       # Bayer pattern
+        white_balance=(2.0, 1.0, 1.8),
+        gamma_param=2.2,
+        iso_base=100,
+        read_noise_std=0.5,
+        shot_noise_std_alpha=0.4,
+        shot_noise_std_beta=0.0,
     )
+
+    # Or load from a JSON config file
+    sensor = RGBSensor.from_config("test.json")
 
 **Bayer Pattern:**
 
@@ -43,14 +50,19 @@ Monochrome sensor without color filter array.
 .. code-block:: python
 
     from deeplens.sensor import MonoSensor
-    
+
     sensor = MonoSensor(
-        resolution=(2048, 2048),
-        pixel_size=3.45e-3,
-        bit_depth=14,
-        qe=0.7,
-        device='cuda'
+        size=(8.0, 6.0),            # Physical size (W, H) [mm]
+        res=(4000, 3000),           # Resolution (W, H) [pixels]
+        bit=10,                     # ADC bit depth
+        black_level=64,
+        iso_base=100,
+        read_noise_std=0.5,
+        shot_noise_std_alpha=0.4,
     )
+
+    # Or load from a JSON config file
+    sensor = MonoSensor.from_config("mono_sensor.json")
 
 Event Sensor
 ^^^^^^^^^^^^
@@ -60,14 +72,17 @@ Event-based sensor (DVS) for high-speed applications.
 .. code-block:: python
 
     from deeplens.sensor import EventSensor
-    
+
     sensor = EventSensor(
-        resolution=(640, 480),
-        pixel_size=18.5e-3,
-        threshold=0.1,              # Contrast threshold
-        refractory_period=1e-3,     # Refractory period [s]
-        device='cuda'
+        size=(8.0, 6.0),            # Physical size (W, H) [mm]
+        res=(640, 480),             # Resolution (W, H) [pixels]
+        threshold_pos=0.2,          # Positive contrast threshold
+        threshold_neg=0.2,          # Negative contrast threshold
+        sigma_threshold=0.03,       # Threshold noise std
     )
+
+    # Or load from a JSON config file
+    sensor = EventSensor.from_config("event_sensor.json")
 
 Sensor Properties
 -----------------
@@ -107,11 +122,12 @@ Sensor Characteristics
 .. code-block:: python
 
     # Print sensor specifications
-    print(f"Sensor size: {sensor.sensor_size} mm")
-    print(f"Resolution: {sensor.resolution} pixels")
-    print(f"Pixel pitch: {sensor.pixel_size*1000:.2f} μm")
-    print(f"Sensor diagonal: {sensor.diagonal:.2f} mm")
-    print(f"Crop factor: {sensor.crop_factor:.2f}")
+    print(f"Sensor size: {sensor.size} mm")
+    print(f"Resolution: {sensor.res} pixels")
+    print(f"Pixel pitch: {sensor.size[0]/sensor.res[0]*1e3:.2f} μm")
+    import math
+    w, h = sensor.size
+    print(f"Sensor diagonal: {math.hypot(w, h):.2f} mm")
 
 Image Capture
 -------------
@@ -119,66 +135,61 @@ Image Capture
 Basic Capture
 ^^^^^^^^^^^^^
 
+The recommended way to capture images end-to-end is via :class:`~deeplens.camera.Camera`.
+For direct sensor usage:
+
 .. code-block:: python
 
-    # Capture image from optical field
-    # Input: irradiance on sensor [W/m^2]
-    irradiance = lens.get_irradiance()  # [H, W, 3] or [H, W]
-    
-    # Capture with sensor
-    raw_image = sensor.capture(
-        irradiance=irradiance,
-        exposure_time=0.01,  # Exposure time [s]
-        iso=100              # ISO setting
-    )
-    
-    # Output: Raw sensor data with Bayer pattern
+    import torch
+
+    # Simulate the full pipeline manually:
+    # 1. Render through lens (linear RGB space)
+    img_linrgb = lens.render(img, depth=-10000.0)  # (B, 3, H, W)
+
+    # 2. Convert linear RGB to n-bit Bayer
+    img_bayer = sensor.linrgb2bayer(img_linrgb)  # (B, 1, H, W) in DN
+
+    # 3. Add noise and run ISP (returns sRGB [0,1])
+    iso = torch.tensor([100])
+    img_out = sensor.forward(img_bayer, iso)  # (B, 3, H, W)
+
+    # Or use Camera for the full integrated pipeline:
+    # camera = Camera(lens_file, sensor_file)
+    # data_lq, data_gt = camera.render(data_dict)
 
 Noise Models
 ^^^^^^^^^^^^
 
-DeepLens simulates realistic sensor noise:
+DeepLens simulates realistic sensor noise via the ``RGBSensor``:
 
-1. **Shot Noise**: Photon counting noise (Poisson)
-2. **Dark Current Noise**: Thermal electrons
-3. **Read Noise**: Electronic readout noise
-4. **Fixed Pattern Noise**: Pixel-to-pixel variation (optional)
+1. **Shot Noise**: Poisson photon-counting noise scaled by ``shot_noise_std_alpha``
+2. **Read Noise**: Gaussian readout noise with std ``read_noise_std``
+
+Noise level is controlled by ISO:
 
 .. code-block:: python
 
-    # Enable/disable noise components
-    sensor = RGBSensor(
-        resolution=(1920, 1080),
-        enable_shot_noise=True,
-        enable_dark_noise=True,
-        enable_read_noise=True,
-        enable_fpn=False,
-        device='cuda'
-    )
+    # Higher ISO → more noise
+    iso_low  = torch.tensor([100])
+    iso_high = torch.tensor([3200])
+    img_clean = sensor.forward(img_bayer, iso_low)
+    img_noisy = sensor.forward(img_bayer, iso_high)
 
 Image Signal Processing (ISP)
 ------------------------------
 
-Complete ISP Pipeline
-^^^^^^^^^^^^^^^^^^^^^
+The ``RGBSensor`` embeds an ``InvertibleISP`` that implements both the
+forward (RAW → sRGB) and inverse (sRGB → RAW) pipelines:
 
 .. code-block:: python
 
-    from deeplens.sensor import ISP
-    
-    # Create ISP pipeline
-    isp = ISP(
-        demosaic_method='bilinear',    # or 'malvar', 'menon'
-        white_balance=True,
-        color_correction=True,
-        gamma_correction=True,
-        denoise=True,
-        sharpen=False,
-        device='cuda'
-    )
-    
-    # Process raw image
-    rgb_image = isp(raw_image)
+    from deeplens.sensor.isp_modules.isp import InvertibleISP
+
+    # Forward: n-bit Bayer → sRGB [0, 1]
+    img_rgb = sensor.forward(img_bayer, iso)
+
+    # Inverse: sRGB [0, 1] → linear RGB [0, 1]
+    img_linrgb = sensor.unprocess(img_rgb)
 
 ISP Modules
 -----------

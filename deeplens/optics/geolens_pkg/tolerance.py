@@ -30,7 +30,22 @@ from deeplens.optics.config import DEPTH
 
 
 class GeoLensTolerance:
-    """Tolerance analysis for geometric lens."""
+    """Mixin providing tolerance analysis for ``GeoLens``.
+
+    Implements two complementary approaches:
+
+    * **Sensitivity analysis** – first-order gradient-based estimation of how
+      each manufacturing error affects optical performance.
+    * **Monte-Carlo analysis** – statistical sampling of random manufacturing
+      errors to predict yield and worst-case performance.
+
+    This class is not instantiated directly; it is mixed into
+    :class:`~deeplens.optics.geolens.GeoLens`.
+
+    References:
+        Jun Dai et al., "Tolerance-Aware Deep Optics,"
+        *arXiv:2502.04719*, 2025.
+    """
 
     def init_tolerance(self, tolerance_params=None):
         """Initialize tolerance parameters for the lens."""

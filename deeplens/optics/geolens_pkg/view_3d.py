@@ -604,7 +604,16 @@ def _draw_mesh_to_plotter(
 
 
 class GeoLensVis3D:
-    """GeoLens utility class for geometry/ray mesh creation and export (no GUI deps)."""
+    """Mixin providing 3-D mesh visualisation for ``GeoLens``.
+
+    Creates lens surface, aperture, barrier, sensor, and ray-path meshes as
+    polygon data and optionally renders them with PyVista.  All geometry is
+    expressed in millimetres and stored as :class:`CrossPoly` (vertex/face)
+    objects that can be saved to ``.obj`` files for external renderers.
+
+    This class is not instantiated directly; it is mixed into
+    :class:`~deeplens.optics.geolens.GeoLens`.
+    """
 
     # # Attribute stubs to satisfy type checkers when mixed into GeoLens
     # surfaces: List[Any]

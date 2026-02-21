@@ -50,8 +50,8 @@ Creating a Hybrid System
     torch.set_default_dtype(torch.float64)
     lens.double()
     
-    # Access refractive lens properties
-    print(f"Focal length: {lens.foclen}")
+    # Access refractive lens properties (via embedded GeoLens)
+    print(f"Focal length: {lens.geolens.foclen}")
     print(f"Sensor size: {lens.geolens.sensor_size}")
     
     # The DOE can be: Binary2, Pixel2D, Fresnel, or Zernike type

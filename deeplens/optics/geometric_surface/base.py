@@ -13,6 +13,32 @@ from deeplens.optics.material import Material
 
 
 class Surface(DeepObj):
+    """Base class for all geometric optical surfaces.
+
+    A surface sits at axial position ``d`` (mm) in the global coordinate
+    system, has an aperture radius ``r`` (mm), and separates two optical
+    media.  Subclasses override :meth:`_sag` and :meth:`_dfdxy` to define
+    their shape.
+
+    Ray–surface interaction is handled by three stages, implemented in
+    :meth:`ray_reaction`:
+
+    1. **Coordinate transform** – ray is brought into the local surface frame.
+    2. **Intersection** – solved via Newton's method (:meth:`newtons_method`),
+       using a non-differentiable iteration loop followed by a single
+       differentiable Newton step to enable gradient flow.
+    3. **Refraction / reflection** – vector Snell's law (:meth:`refract`) or
+       specular reflection (:meth:`reflect`).
+
+    Attributes:
+        d (torch.Tensor): Axial position of the surface vertex [mm].
+        r (float): Aperture radius [mm].
+        mat2 (Material): Optical material on the transmission side.
+        is_square (bool): If ``True`` the aperture is square; otherwise circular.
+        tolerancing (bool): When ``True``, manufacturing error offsets are
+            applied during ray tracing.
+    """
+
     def __init__(
         self,
         r,
@@ -23,6 +49,21 @@ class Surface(DeepObj):
         is_square=False,
         device="cpu",
     ):
+        """Initialize a generic optical surface.
+
+        Args:
+            r (float): Aperture radius [mm].
+            d (float): Axial position of the surface vertex [mm].
+            mat2 (str or Material): Material on the transmission side
+                (e.g. ``"N-BK7"``, ``"air"``).
+            pos_xy (list[float], optional): Lateral offset ``[x, y]`` [mm].
+                Defaults to ``[0.0, 0.0]``.
+            vec_local (list[float], optional): Local normal direction.
+                Defaults to ``[0.0, 0.0, 1.0]`` (on-axis).
+            is_square (bool, optional): Use a square aperture.
+                Defaults to ``False``.
+            device (str, optional): Compute device. Defaults to ``"cpu"``.
+        """
         super(Surface, self).__init__()
 
         # Global direction vector, always pointing to the positive z-axis
@@ -69,7 +110,22 @@ class Surface(DeepObj):
     # Intersection, refraction, reflection between ray and surface
     # =====================================================================
     def ray_reaction(self, ray, n1, n2, refraction=True):
-        """Compute output ray after intersection and refraction with a surface."""
+        """Compute the output ray after intersection and refraction/reflection.
+
+        Transforms the ray to the local surface frame, solves the intersection
+        via Newton's method, applies vector Snell's law (or specular reflection),
+        then transforms back to global coordinates.
+
+        Args:
+            ray (Ray): Incident ray bundle.
+            n1 (float): Refractive index of the incident medium.
+            n2 (float): Refractive index of the transmission medium.
+            refraction (bool, optional): If ``True`` (default) refract the ray;
+                if ``False`` reflect it.
+
+        Returns:
+            Ray: Updated ray bundle after the surface interaction.
+        """
         # Transform ray to local coordinate system
         ray = self.to_local_coord(ray)
 
@@ -586,16 +642,20 @@ class Surface(DeepObj):
         """Initialize tolerance parameters for the surface.
 
         Args:
-            tolerance_params (dict): Tolerance for surface parameters. Example:
-                {
-                    "r_tole": 0.05, # [mm]
-                    "d_tole": 0.05, # [mm]
-                    "center_thickness_tole": 0.1, # [mm]
-                    "decenter_tole": 0.1, # [mm]
-                    "tilt_tole": 0.1, # [arcmin]
-                    "mat2_n_tole": 0.001,
-                    "mat2_V_tole": 0.01, # [%]
-                }
+            tolerance_params (dict or None): Tolerance for surface parameters.
+                Supported keys (all optional, default values shown):
+
+                .. code-block:: python
+
+                    {
+                        "r_tole": 0.05,               # aperture radius [mm]
+                        "d_tole": 0.05,               # axial position [mm]
+                        "center_thickness_tole": 0.1, # centre thickness [mm]
+                        "decenter_tole": 0.1,         # lateral decentre [mm]
+                        "tilt_tole": 0.1,             # tilt [arcmin]
+                        "mat2_n_tole": 0.001,         # refractive index
+                        "mat2_V_tole": 0.01,          # Abbe number [%]
+                    }
 
         References:
             [1] https://www.edmundoptics.com/knowledge-center/application-notes/optics/understanding-optical-specifications/?srsltid=AfmBOorBa-0zaOcOhdQpUjmytthZc07oFlmPW_2AgaiNHHQwobcAzWII

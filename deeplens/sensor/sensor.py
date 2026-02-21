@@ -15,11 +15,31 @@ from deeplens.sensor.isp_modules.gamma_correction import GammaCorrection
 
 
 class Sensor(nn.Module):
+    """Minimal image sensor with gamma-only ISP.
+
+    The simplest sensor model: records physical size and resolution, and
+    applies only a gamma correction in the ISP forward pass.  For a sensor
+    with noise simulation and Bayer demosaicing use
+    :class:`~deeplens.sensor.rgb_sensor.RGBSensor`.
+
+    Attributes:
+        size (tuple): Physical sensor size (W, H) [mm].
+        res (tuple): Pixel resolution (W, H).
+        isp (nn.Sequential): ISP pipeline (``GammaCorrection`` by default).
+
+    Example:
+        >>> sensor = Sensor(size=(8.0, 6.0), res=(4000, 3000))
+        >>> sensor = Sensor.from_config("sensor.json")
+    """
+
     def __init__(self, size=(8.0, 6.0), res=(4000, 3000)):
-        """
+        """Initialize a minimal sensor.
+
         Args:
-            size (tuple): Sensor physical size in mm (W, H). Default (8.0, 6.0).
-            res (tuple): Sensor resolution in pixels (W, H). Default (4000, 3000).
+            size (tuple, optional): Physical sensor size (W, H) [mm].
+                Defaults to ``(8.0, 6.0)``.
+            res (tuple, optional): Pixel resolution (W, H).
+                Defaults to ``(4000, 3000)``.
         """
         super().__init__()
 

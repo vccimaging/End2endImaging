@@ -13,6 +13,20 @@ from deeplens.optics.geometric_surface.base import EPSILON, Surface
 
 
 class Spheric(Surface):
+    """Spherical refractive surface parameterized by curvature.
+
+    The sag function is:
+
+    .. math::
+
+        z(x, y) = \\frac{c \\rho^2}{1 + \\sqrt{1 - c^2 \\rho^2}}, \\quad
+        \\rho^2 = x^2 + y^2
+
+    Attributes:
+        c (torch.Tensor): Surface curvature ``1/R`` [1/mm].  Differentiable
+            with respect to gradient-based optimization.
+    """
+
     def __init__(
         self,
         c,
@@ -24,6 +38,22 @@ class Spheric(Surface):
         is_square=False,
         device="cpu",
     ):
+        """Initialize a spherical surface.
+
+        Args:
+            c (float): Surface curvature ``1/R`` [1/mm].  Use ``0`` for a flat
+                surface (equivalent to ``Plane``).
+            r (float): Aperture radius [mm].
+            d (float): Axial vertex position [mm].
+            mat2 (str or Material): Material on the transmission side.
+            pos_xy (list[float], optional): Lateral offset ``[x, y]`` [mm].
+                Defaults to ``[0.0, 0.0]``.
+            vec_local (list[float], optional): Local normal direction.
+                Defaults to ``[0.0, 0.0, 1.0]``.
+            is_square (bool, optional): Square aperture flag. Defaults to
+                ``False``.
+            device (str, optional): Compute device. Defaults to ``"cpu"``.
+        """
         super(Spheric, self).__init__(
             r=r,
             d=d,

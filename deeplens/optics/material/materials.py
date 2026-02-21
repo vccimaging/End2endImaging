@@ -81,7 +81,45 @@ CUSTOM_data = read_custom_mat(os.path.join(_dir, "materials_data.json"))
 # Material class
 # ===========================================
 class Material(DeepObj):
+    """Optical material defined by its wavelength-dependent refractive index.
+
+    Materials are looked up by name in the bundled CDGM, SCHOTT, or MISC AGF
+    catalogs, in a custom JSON catalog, or specified inline as ``"n/V"``
+    (Cauchy approximation from Abbe number *V*).
+
+    Supported dispersion models: ``"sellmeier"``, ``"cauchy"``, ``"schott"``,
+    and ``"interp"`` (lookup table).
+
+    Attributes:
+        name (str): Lowercase material name.
+        dispersion (str): Dispersion model used (``"sellmeier"``, ``"cauchy"``,
+            ``"schott"``, or ``"interp"``).
+        n (float): Refractive index at the d-line (587 nm).
+        V (float): Abbe number.
+    """
+
     def __init__(self, name=None, device="cpu"):
+        """Initialize an optical material.
+
+        Args:
+            name (str or None, optional): Material name (case-insensitive).
+                Accepted forms:
+
+                * Glass catalog name, e.g. ``"N-BK7"``, ``"H-K9L"``
+                * ``"air"`` or ``"vacuum"`` (n = 1, non-dispersive)
+                * Inline Cauchy, e.g. ``"1.5168/64.17"``
+                * Custom name registered in ``materials_data.json``
+
+                Defaults to ``None`` (treated as ``"vacuum"``).
+            device (str, optional): Compute device. Defaults to ``"cpu"``.
+
+        Raises:
+            NotImplementedError: If *name* is not found in any catalog.
+
+        Example:
+            >>> mat = Material("N-BK7")
+            >>> n_green = mat.get_ri(0.587)  # refractive index at 587 nm
+        """
         self.name = "vacuum" if name is None else name.lower()
         self.load_dispersion()
         self.device = device

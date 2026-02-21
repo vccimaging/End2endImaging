@@ -16,15 +16,34 @@ from deeplens.optics.base import DeepObj
 
 
 class Ray(DeepObj):
+    """Batched ray bundle for optical simulation.
+
+    Stores ray origins, directions, wavelength, validity mask, energy, obliquity,
+    and (in coherent mode) optical path length.  All tensor attributes share the
+    same batch shape ``(*batch_size, num_rays)``.
+
+    Attributes:
+        o (torch.Tensor): Ray origins, shape ``(*batch, num_rays, 3)`` [mm].
+        d (torch.Tensor): Unit ray directions, shape ``(*batch, num_rays, 3)``.
+        wvln (torch.Tensor): Wavelength scalar [µm].
+        is_valid (torch.Tensor): Binary validity mask, shape ``(*batch, num_rays)``.
+        en (torch.Tensor): Energy weight, shape ``(*batch, num_rays, 1)``.
+        obliq (torch.Tensor): Obliquity factor, shape ``(*batch, num_rays, 1)``.
+        opl (torch.Tensor): Optical path length (coherent mode only),
+            shape ``(*batch, num_rays, 1)`` [mm].
+        coherent (bool): Whether OPL tracking is enabled.
+    """
+
     def __init__(self, o, d, wvln=DEFAULT_WAVE, coherent=False, device="cpu"):
         """Initialize a ray object.
 
         Args:
-            o (torch.Tensor): Ray origin, shape (*batch_size, num_rays, 3).
-            d (torch.Tensor): Ray direction, shape (*batch_size, num_rays, 3).
-            wvln (float or torch.Tensor): Ray wavelength, unit: [um]. If a tensor, shape must be (*batch_size, 1).
-            coherent (bool): Whether to use coherent ray tracing.
-            device (str): Device to store the ray.
+            o (torch.Tensor): Ray origin, shape ``(..., num_rays, 3)`` [mm].
+            d (torch.Tensor): Ray direction, shape ``(..., num_rays, 3)``.
+            wvln (float): Ray wavelength [µm].
+            coherent (bool): Enable optical path length tracking for coherent
+                tracing. Defaults to ``False``.
+            device (str): Compute device. Defaults to ``"cpu"``.
         """
         # Basic ray parameters - move to device
         self.o = (o if torch.is_tensor(o) else torch.tensor(o)).to(device)

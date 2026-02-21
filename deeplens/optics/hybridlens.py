@@ -41,11 +41,33 @@ from .light import AngularSpectrumMethod
 
 
 class HybridLens(Lens):
-    """A hybrid refractive-diffractive lens with a Geolens and a DOE at last.
+    """Hybrid refractive-diffractive lens using a differentiable ray–wave model.
 
-    This differentiable hybrid lens model can similate:
-        1. Aberration of the refractive lens
-        2. DOE phase modulation
+    Combines a :class:`~deeplens.optics.geolens.GeoLens` (refractive module)
+    with a diffractive optical element (DOE) placed behind it.  The pipeline
+    is:
+
+    1. **Coherent ray tracing** through the embedded ``GeoLens`` to obtain a
+       complex wavefront at the DOE plane (including all geometric aberrations).
+    2. **DOE phase modulation** applied to the wavefront.
+    3. **Angular Spectrum Method (ASM) propagation** from the DOE to the sensor
+       plane to produce the final intensity PSF.
+
+    This enables end-to-end gradient flow from image quality metrics back to
+    both refractive surface parameters and the DOE phase profile.
+
+    Attributes:
+        geolens (GeoLens): Embedded refractive module.
+        doe: Diffractive optical element (one of ``Binary2``, ``Pixel2D``,
+            ``Fresnel``, ``Zernike``, ``Grating``).
+
+    Notes:
+        Operates in ``torch.float64`` by default for numerical stability of
+        the wave-propagation step.
+
+    References:
+        Xinge Yang et al., "End-to-End Hybrid Refractive-Diffractive Lens
+        Design with Differentiable Ray-Wave Model," *SIGGRAPH Asia* 2024.
     """
 
     def __init__(

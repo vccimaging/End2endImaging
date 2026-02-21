@@ -20,6 +20,20 @@ from .imgsim import conv_psf_depth_interp, conv_psf_occlusion
 
 
 class ParaxialLens(Lens):
+    """Thin-lens / ABCD-matrix model for fast defocus simulation.
+
+    Models the circle of confusion (CoC) caused by defocus but not
+    higher-order optical aberrations.  Useful as a fast baseline renderer for
+    depth-of-field effects, as commonly used in Blender and similar tools.
+
+    Attributes:
+        foclen (float): Focal length [mm].
+        fnum (float): F-number.
+        sensor_size (tuple): Physical sensor size (W, H) [mm].
+        sensor_res (tuple): Pixel resolution (W, H).
+        pixel_size (float): Pixel pitch [mm].
+    """
+
     def __init__(self, foclen, fnum, sensor_size=None, sensor_res=None, device="cpu"):
         """Initialize a paraxial lens.
 

@@ -39,14 +39,24 @@ from deeplens.optics.config import DELTA, PSF_KS
 # ================================================
 
 def conv_psf(img, psf):
-    """Convolve an image batch with a PSF.
+    """Convolve an image batch with a single spatially-uniform PSF.
+
+    Applies a per-channel 2-D convolution using ``reflect`` boundary padding
+    so that the output has the same spatial dimensions as the input.  The PSF
+    is internally flipped to convert the cross-correlation implemented by
+    ``F.conv2d`` into a true convolution.
 
     Args:
-        img (torch.Tensor): [B, C, H, W]
-        psf (torch.Tensor): [C, ks, ks]. ks can be odd or even.
+        img (torch.Tensor): Input image batch, shape ``[B, C, H, W]``.
+        psf (torch.Tensor): PSF kernel, shape ``[C, ks, ks]``.  ``ks`` may be
+            odd or even.
 
     Returns:
-        img_render (torch.Tensor): [B, C, H, W]
+        torch.Tensor: Rendered image, shape ``[B, C, H, W]``.
+
+    Example:
+        >>> psf = lens.psf_rgb(points=torch.tensor([0.0, 0.0, -10000.0]))
+        >>> img_blur = conv_psf(img, psf)
     """
     B, C, H, W = img.shape
     C_psf, ks, _ = psf.shape
@@ -68,14 +78,18 @@ def conv_psf(img, psf):
     return img_render
 
 def conv_psf_map(img, psf_map):
-    """Convolve an image batch with a PSF map.
+    """Convolve an image batch with a spatially-varying PSF map.
+
+    Divides the image into ``grid_h × grid_w`` non-overlapping patches and
+    convolves each patch with its corresponding PSF kernel.  The results are
+    assembled back into a full-resolution output via a weighted blending step.
 
     Args:
-        img (torch.Tensor): [B, C, H, W]
-        psf_map (torch.Tensor): [grid_h, grid_w, C, ks, ks]
+        img (torch.Tensor): Input image batch, shape ``[B, C, H, W]``.
+        psf_map (torch.Tensor): PSF map, shape ``[grid_h, grid_w, C, ks, ks]``.
 
     Returns:
-        img_render (torch.Tensor): [B, C, H, W]
+        torch.Tensor: Rendered image, shape ``[B, C, H, W]``.
     """
     B, C, H, W = img.shape
     grid_h, grid_w, C_psf, ks, _ = psf_map.shape
@@ -236,19 +250,32 @@ def conv_psf_map_depth_interp(img, depth, psf_map, psf_depths, interp_mode="dept
 
 
 def conv_psf_depth_interp(img, depth, psf_kernels, psf_depths, interp_mode="depth"):
-    """Convolve an image batch with PSFs at multiple given depths, then do interpolation with a depth map.
+    """Depth-interpolated PSF convolution for a spatially-uniform but depth-varying blur.
 
-    The differentiability of this function is not guaranteed.
+    Pre-convolves the image with PSFs at each reference depth, then blends the
+    results using per-pixel linear interpolation weights derived from *depth*.
+    This approximates defocus blur for a single field position across a depth
+    range without computing a separate PSF per pixel.
 
     Args:
-        img: (B, 3, H, W), [0, 1]
-        depth: (B, 1, H, W), (-inf, 0)
-        psf_kernels: (num_depth, 3, ks, ks)
-        psf_depths: (num_depth). (-inf, 0). Used to interpolate psf_kernels.
-        interp_mode: "depth" or "disparity". If "disparity", weights are calculated based on disparity (1/depth).
+        img (torch.Tensor): Image batch, shape ``[B, C, H, W]``, values in
+            ``[0, 1]``.
+        depth (torch.Tensor): Depth map, shape ``[B, 1, H, W]``, values in
+            ``(-∞, 0)`` mm (negative convention).
+        psf_kernels (torch.Tensor): PSF stack at reference depths, shape
+            ``[num_depth, C, ks, ks]``.
+        psf_depths (torch.Tensor): Depth of each PSF layer, shape
+            ``[num_depth]``, values in ``(-∞, 0)`` mm.  Must be monotone.
+        interp_mode (str, optional): Interpolation space.  ``"depth"``
+            interpolates linearly in depth; ``"disparity"`` interpolates
+            linearly in 1/depth.  Defaults to ``"depth"``.
 
     Returns:
-        img_blur: (B, 3, H, W), [0, 1]
+        torch.Tensor: Blurred image, shape ``[B, C, H, W]``.
+
+    Raises:
+        AssertionError: If *depth* or *psf_depths* contain non-negative values,
+            or if *interp_mode* is not ``"depth"`` or ``"disparity"``.
     """
     assert interp_mode in ["depth", "disparity"], f"interp_mode must be 'depth' or 'disparity', got {interp_mode}"
     assert depth.min() < 0 and depth.max() < 0, f"depth must be negative, got {depth.min()} and {depth.max()}"

@@ -112,31 +112,58 @@ class Lens(DeepObj):
     # 3. PSF radial
     # ===========================================
     def psf(self, points, wvln=DEFAULT_WAVE, ks=PSF_KS, **kwargs):
-        """Compute monochrome point PSF.
+        """Compute the monochromatic PSF for one or more point sources.
 
-        NOTE:
-            [1] This function should be designed to be differentiable.
-            [2] We should consider diffraction in the PSF calculation. Check Cittert-Zernike Theorem for reference.
+        Subclasses must override this method with a differentiable
+        implementation.  Three computation models are common in practice:
+        geometric ray binning, coherent ray-wave, and Huygens spherical-wave
+        integration.
 
         Args:
-            points (tensor): Shape of [N, 3] or [3]. [-1, 1] * [-1, 1] * [-Inf, 0]
-            wvln (float, optional): Wavelength. Defaults to DEFAULT_WAVE.
-            ks (int, optional): Kernel size. Defaults to PSF_KS.
+            points (torch.Tensor): Point source coordinates, shape ``[N, 3]``
+                or ``[3]``.  ``x, y`` are normalised to ``[-1, 1]``
+                (relative to the sensor half-diagonal); ``z`` is depth in mm
+                (must be negative, i.e. in front of the lens).
+            wvln (float, optional): Wavelength in micrometers.  Defaults to
+                ``DEFAULT_WAVE`` (0.587 µm, d-line).
+            ks (int, optional): Output PSF kernel size in pixels.  Defaults
+                to ``PSF_KS`` (64).
+            **kwargs: Additional keyword arguments forwarded to the underlying
+                PSF computation (e.g. ``spp``, ``model``, ``recenter``).
 
         Returns:
-            psf: Shape of [ks, ks] or [N, ks, ks].
+            torch.Tensor: PSF intensity map, shape ``[ks, ks]`` for a single
+            point or ``[N, ks, ks]`` for a batch.
+
+        Raises:
+            NotImplementedError: This base implementation must be overridden.
+
+        Notes:
+            The method is differentiable with respect to all optimisable lens
+            parameters so it can be used directly inside a training loop.
+
+        Example:
+            >>> point = torch.tensor([0.0, 0.0, -10000.0])
+            >>> psf = lens.psf(points=point, ks=64, model="geometric")
+            >>> print(psf.shape)  # torch.Size([64, 64])
         """
         raise NotImplementedError
 
     def psf_rgb(self, points, ks=PSF_KS, **kwargs):
-        """Compute RGB point PSF.
+        """Compute the RGB (tri-chromatic) PSF by stacking three wavelength calls.
+
+        Calls :meth:`psf` three times for the RGB primary wavelengths defined
+        in ``WAVE_RGB`` and stacks the results along the channel axis.
 
         Args:
-            points (tensor): Shape of [N, 3] or [3].
-            ks (int, optional): Kernel size. Defaults to PSF_KS.
+            points (torch.Tensor): Point source coordinates, shape ``[N, 3]``
+                or ``[3]``.  Same convention as :meth:`psf`.
+            ks (int, optional): PSF kernel size. Defaults to ``PSF_KS``.
+            **kwargs: Forwarded to :meth:`psf` (e.g. ``spp``, ``model``).
 
         Returns:
-            psf_rgb: Shape of [N, 3, ks, ks] or [3, ks, ks].
+            torch.Tensor: RGB PSF, shape ``[3, ks, ks]`` for a single point
+            or ``[N, 3, ks, ks]`` for a batch.
         """
         psfs = []
         for wvln in WAVE_RGB:
@@ -386,30 +413,49 @@ class Lens(DeepObj):
     # Simulate 2D scene
     # -------------------------------------------
     def render(self, img_obj, depth=DEPTH, method="psf_patch", **kwargs):
-        """Differentiable image simulation, considering only 2D scene.
+        """Differentiable image simulation for a 2D (flat) scene.
 
-        NOTE:
-            [1] This function performs only the optical component of image simulation and is designed to be fully differentiable. Other components (e.g., noise simulation) are handled by other functions (see Camera class).
-            [2] For incoherent imaging, we should calculate the intensity PSF (squared magnitude of the complex amplitude) and convolve it with the object-space image. For coherent imaging, we should convolve the complex PSF with the complex object image and then calculate the intensity by squaring the magnitude.
+        Performs only the optical component of image simulation and is fully
+        differentiable.  Sensor noise is handled separately by the
+        :class:`~deeplens.camera.Camera` class.
 
-        Image simulation methods:
-            [1] PSF map, convolution by patches.
-            [2] PSF patch, convolution by a single PSF.
-            [3] Ray tracing rendering, in GeoLens.
-            [4] ...
+        For incoherent imaging the intensity PSF is convolved with the
+        object-space image.  For coherent imaging the complex PSF is convolved
+        with the complex object image before squaring for intensity.
 
         Args:
-            img_obj (tensor): Input image object in raw space. Shape of [N, C, H, W].
-            depth (float, optional): Depth of the object. Defaults to DEPTH.
-            method (str, optional): Image simulation method. Defaults to "psf".
-            **kwargs: Additional arguments for different methods.
+            img_obj (torch.Tensor): Input image in linear (raw) space,
+                shape ``[B, C, H, W]``.
+            depth (float, optional): Object depth in mm (negative value).
+                Defaults to ``DEPTH`` (-20 000 mm, i.e. infinity).
+            method (str, optional): Rendering method.  One of:
+
+                * ``"psf_patch"`` – convolve a single PSF evaluated at
+                  *patch_center* (default).
+                * ``"psf_map"`` – spatially-varying PSF block convolution.
+
+            **kwargs: Method-specific keyword arguments:
+
+                * For ``"psf_map"``: ``psf_grid`` (tuple, default ``(10, 10)``),
+                  ``psf_ks`` (int, default ``PSF_KS``).
+                * For ``"psf_patch"``: ``patch_center`` (tuple or Tensor,
+                  default ``(0.0, 0.0)``), ``psf_ks`` (int).
 
         Returns:
-            img_render (tensor): Rendered image. Shape of [N, C, H, W].
+            torch.Tensor: Rendered image, shape ``[B, C, H, W]``.
 
-        Reference:
+        Raises:
+            AssertionError: If *method* is ``"psf_map"`` and the image
+                resolution does not match the sensor resolution.
+            Exception: If *method* is not recognised.
+
+        References:
             [1] "Optical Aberration Correction in Postprocessing using Imaging Simulation", TOG 2021.
             [2] "Efficient depth- and spatially-varying image simulation for defocus deblur", ICCVW 2025.
+
+        Example:
+            >>> img_rendered = lens.render(img, depth=-10000.0, method="psf_patch",
+            ...                            patch_center=(0.3, 0.0), psf_ks=64)
         """
         # Check sensor resolution
         B, C, Himg, Wimg = img_obj.shape

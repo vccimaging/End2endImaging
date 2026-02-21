@@ -33,6 +33,24 @@ from .light import ComplexWave
 
 
 class DiffractiveLens(Lens):
+    """Paraxial diffractive lens in which each element is modelled as a phase surface.
+
+    Every optical element (converging lens, DOE, metasurface, …) is
+    represented by a phase function applied to an incoming complex wavefront.
+    Propagation between surfaces uses the Angular Spectrum Method (ASM).
+    This model is simple and fast, but accurate only in the paraxial regime
+    (it does not account for higher-order geometric aberrations).
+
+    Attributes:
+        surfaces (list): Ordered list of diffractive/phase surfaces.
+        d_sensor (torch.Tensor): Distance from the last surface to the sensor
+            plane [mm].
+
+    Notes:
+        Operates in ``torch.float64`` by default for numerical stability of
+        the wave-propagation step.
+    """
+
     def __init__(
         self,
         filename=None,

@@ -15,134 +15,91 @@ The ``deeplens.network`` package contains:
 Surrogate Networks
 ------------------
 
-PSFNet
-^^^^^^
+PSFNetLens
+^^^^^^^^^^
 
-Neural network for fast PSF prediction across depth and field positions.
-
-.. code-block:: python
-
-    from deeplens.network import PSFNet
-    
-    # Create network
-    psfnet = PSFNet(
-        in_channels=3,        # [depth, field_x, field_y]
-        out_channels=1,       # PSF
-        hidden_dim=256,
-        num_layers=8,
-        psf_size=64,
-        device='cuda'
-    )
-    
-    # Forward pass
-    psf = psfnet(
-        depth=torch.tensor([1000.0]),
-        field=torch.tensor([0.0, 0.5]),
-        wavelength=torch.tensor([0.550])
-    )
-
-Architecture
-""""""""""""
-
-PSFNet uses a modified MLP with:
-
-* Coordinate-based input encoding
-* Skip connections for gradient flow
-* Periodic activation functions (SIREN-like)
-
-Training
-""""""""
+The recommended way to use neural PSF prediction is through
+:class:`~deeplens.optics.psfnetlens.PSFNetLens`, which wraps a ``GeoLens``
+with an MLP/MLPConv surrogate and handles training automatically.
 
 .. code-block:: python
 
-    from deeplens.network import PSFDataset
-    import torch.optim as optim
-    
-    # Create dataset
-    dataset = PSFDataset(
-        lens=geolens,
-        num_samples=10000,
-        depth_range=[500, 5000],
-        field_range=[0.0, 1.0]
+    from deeplens import PSFNetLens
+
+    # Create PSFNetLens (loads GeoLens from file, adds surrogate network)
+    lens = PSFNetLens(
+        lens_path="datasets/lenses/camera/ef50mm_f1.8.json",
+        in_chan=3,          # input: (fov, depth, foc_dist)
+        psf_chan=3,         # output: RGB PSF
+        model_name="mlp_conv",
+        kernel_size=64,
     )
-    
-    # Training loop
-    optimizer = optim.Adam(psfnet.parameters(), lr=1e-4)
-    
-    for epoch in range(100):
-        for batch in dataloader:
-            depth, field, psf_gt = batch
-            
-            # Forward
-            psf_pred = psfnet(depth, field)
-            
-            # Loss
-            loss = torch.nn.functional.mse_loss(psf_pred, psf_gt)
-            
-            # Backward
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+
+    # Train the surrogate (ray-traces PSFs for supervision)
+    lens.train_psfnet(iters=100000, spp=16384)
+
+    # Fast RGB PSF prediction
+    points = torch.tensor([[0.0, 0.5, -1000.0]])
+    psf_rgb = lens.psf_rgb(points=points, ks=64)  # (1, 3, 64, 64)
 
 See ``3_psf_net.py`` for a complete training example.
 
-SIREN
-^^^^^
+MLP
+^^^
 
-Sinusoidal representation network for implicit optical representations.
+Simple multi-layer perceptron producing normalised outputs.
 
 .. code-block:: python
 
-    from deeplens.network import SIREN
-    
-    model = SIREN(
-        in_features=5,      # [x, y, depth, field_x, field_y]
-        out_features=3,     # RGB PSF
-        hidden_features=256,
-        hidden_layers=8,
-        outermost_linear=True,
-        first_omega_0=30.0,
-        hidden_omega_0=30.0
+    from deeplens.network import MLP
+
+    model = MLP(
+        in_features=3,        # input dimension
+        out_features=64,      # output dimension
+        hidden_features=64,   # hidden layer width
+        hidden_layers=3,      # number of hidden layers
     )
+    out = model(x)  # (B, out_features)
 
-**Key Features:**
+MLPConv
+^^^^^^^
 
-* Periodic activation: :math:`\\sin(\\omega_0 x)`
-* Better learning of high-frequency details
-* Implicit representation of optical fields
-
-MLP with Convolutions
-^^^^^^^^^^^^^^^^^^^^^^
-
-Hybrid MLP-Conv architecture for spatial-variant PSF prediction.
+MLP encoder + convolutional decoder for spatial kernel prediction.
 
 .. code-block:: python
 
     from deeplens.network import MLPConv
-    
+
     model = MLPConv(
-        spatial_dim=(64, 64),    # PSF size
-        condition_dim=3,         # [depth, field_x, field_y]
-        hidden_dim=512,
-        num_layers=6,
-        use_skip=True
+        in_features=3,    # condition vector dimension
+        ks=64,            # output spatial size (ks × ks kernel)
+        channels=3,       # output channels
+        activation="relu",
     )
+    kernel = model(condition)  # (B, 3, 64, 64)
 
-Modulated SIREN
-^^^^^^^^^^^^^^^
+Siren / ModulateSiren
+^^^^^^^^^^^^^^^^^^^^^
 
-SIREN with FiLM (Feature-wise Linear Modulation) conditioning.
+Sinusoidal Representation Network for implicit optical field modelling.
 
 .. code-block:: python
 
-    from deeplens.network import ModulateSIREN
-    
-    model = ModulateSIREN(
-        in_features=2,          # [x, y]
-        condition_features=3,   # [depth, field_x, field_y]
-        out_features=1,
-        hidden_features=256,
-        hidden_layers=8
+    from deeplens.network import Siren, ModulateSiren
+
+    # Single Siren layer
+    layer = Siren(dim_in=2, dim_out=256, w0=30.0, is_first=True)
+
+    # Full modulated network (FiLM conditioning)
+    model = ModulateSiren(
+        dim_in=2,
+        dim_hidden=256,
+        dim_out=1,
+        dim_latent=64,      # latent conditioning vector
+        num_layers=5,
+        image_width=64,
+        image_height=64,
+        w0_initial=30.0,
     )
 
 Reconstruction Networks

@@ -23,6 +23,7 @@ version = '1.0.0'
 
 extensions = [
     'sphinx.ext.autodoc',
+    'sphinx.ext.autosummary',
     'sphinx.ext.napoleon',
     'sphinx.ext.viewcode',
     'sphinx.ext.mathjax',
@@ -32,6 +33,11 @@ extensions = [
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+
+# autosummary: auto-generate stub RST files for every submodule/class
+autosummary_generate = True
+autosummary_generate_overwrite = False   # keep any hand-edited stubs
+autosummary_imported_members = True      # show members re-exported via __init__
 
 # Napoleon settings for Google-style docstrings
 napoleon_google_docstring = True

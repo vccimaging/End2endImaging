@@ -53,12 +53,7 @@ Contents
    :maxdepth: 2
    :caption: API Reference
 
-   api/lens
-   api/geolens
-   api/optics
-   api/sensor
-   api/network
-   api/utils
+   api/index
 
 .. toctree::
    :maxdepth: 1

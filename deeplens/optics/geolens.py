@@ -65,6 +65,49 @@ class GeoLens(
     GeoLensTolerance,
     GeoLensVis3D,
 ):
+    """Differentiable geometric lens using vectorised ray tracing.
+
+    The primary lens model in DeepLens.  Supports multi-element refractive
+    (and partially reflective) systems loaded from JSON, Zemax ``.zmx``, or
+    Code V ``.seq`` files.  Accuracy is aligned with Zemax OpticStudio.
+
+    Uses a **mixin architecture** – six specialised mixin classes are
+    composed at class definition time to keep each concern isolated:
+
+    * :class:`~deeplens.optics.geolens_pkg.eval.GeoLensEval` – optical
+      performance evaluation (spot, MTF, distortion, vignetting).
+    * :class:`~deeplens.optics.geolens_pkg.optim.GeoLensOptim` – loss
+      functions and gradient-based optimisation.
+    * :class:`~deeplens.optics.geolens_pkg.vis.GeoLensVis` – 2-D layout
+      and ray visualisation.
+    * :class:`~deeplens.optics.geolens_pkg.io.GeoLensIO` – read/write
+      JSON, Zemax ``.zmx``.
+    * :class:`~deeplens.optics.geolens_pkg.tolerance.GeoLensTolerance` –
+      manufacturing tolerance analysis.
+    * :class:`~deeplens.optics.geolens_pkg.view_3d.GeoLensVis3D` – 3-D
+      mesh visualisation.
+
+    **Key differentiability trick**: Ray-surface intersection
+    (:meth:`~deeplens.optics.geometric_surface.base.Surface.newtons_method`)
+    uses a non-differentiable Newton loop followed by one differentiable
+    Newton step to enable gradient flow.
+
+    Attributes:
+        surfaces (list[Surface]): Ordered list of optical surfaces.
+        materials (list[Material]): Optical materials between surfaces.
+        d_sensor (torch.Tensor): Back focal distance [mm].
+        foclen (float): Effective focal length [mm].
+        fnum (float): F-number.
+        rfov (float): Half-diagonal field of view [radians].
+        sensor_size (tuple): Physical sensor size (W, H) [mm].
+        sensor_res (tuple): Sensor resolution (W, H) [pixels].
+        pixel_size (float): Pixel pitch [mm].
+
+    References:
+        Xinge Yang et al., "Curriculum learning for ab initio deep learned
+        refractive optics," *Nature Communications* 2024.
+    """
+
     def __init__(
         self,
         filename=None,
@@ -213,8 +256,8 @@ class GeoLens(
             fov_y_list = [float(np.rad2deg(fov_y)) for fov_y in fov_y_list]
         else:
             # Sample uniform object grid
-            fov_x_list = [np.atan(x * np.tan(self.vfov / 2)) for x in x_list]
-            fov_y_list = [np.atan(y * np.tan(self.hfov / 2)) for y in y_list]
+            fov_x_list = [np.arctan(x * np.tan(self.vfov / 2)) for x in x_list]
+            fov_y_list = [np.arctan(y * np.tan(self.hfov / 2)) for y in y_list]
             fov_x_list = [float(np.rad2deg(fov_x)) for fov_x in fov_x_list]
             fov_y_list = [float(np.rad2deg(fov_y)) for fov_y in fov_y_list]
 
@@ -298,7 +341,7 @@ class GeoLens(
             scale_pupil (float): Scale factor for pupil radius.
 
         Returns:
-            Ray: Sampled rays with shape [*points.shape[:-1], num_rays, 3].
+            Ray: Sampled rays with shape ``(\\*points.shape[:-1], num_rays, 3)``.
         """
         # Ray origin is given
         ray_o = torch.tensor(points) if not torch.is_tensor(points) else points
@@ -540,7 +583,7 @@ class GeoLens(
             shape (list): Shape of the output tensor.
 
         Returns:
-            torch.Tensor: Tensor of shape [*shape, 3] containing sampled points.
+            torch.Tensor: Sampled points, shape ``(\\*shape, 3)``.
         """
         device = self.device
 
@@ -1970,11 +2013,11 @@ class GeoLens(
         The entrance pupil is the optical image of the physical aperture stop, as seen through the optical elements in front of the stop. We sample backward rays from the aperture stop and trace them to the first surface, then find the intersection points of the reverse extension of the rays. The average of the intersection points defines the entrance pupil position and radius.
 
         Args:
-            paraxial (bool): Ray sampling mode. Default: True.
-                - True: Rays emitted from near the center of the aperture stop, close to
-                  the optical axis. Fast and stable under ideal optical assumptions.
-                - False: Rays emitted from the edge of the aperture stop in large quantities.
-                  Slower and affected by aperture-related aberrations.
+            paraxial (bool): Ray sampling mode.  If ``True``, rays are emitted
+                near the centre of the aperture stop (fast, paraxially stable).
+                If ``False``, rays are emitted from the stop edge in larger
+                quantities (slower, accounts for aperture aberrations).
+                Defaults to ``False``.
 
         Returns:
             tuple: (z_position, radius) of entrance pupil.

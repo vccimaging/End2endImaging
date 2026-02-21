@@ -9,7 +9,32 @@ from deeplens.sensor.isp_modules.isp import InvertibleISP
 
 
 class RGBSensor(Sensor):
-    """RGB sensor."""
+    """RGB Bayer-pattern sensor with physics-based noise model and invertible ISP.
+
+    Simulates the full image-capture pipeline from linear photon counts to
+    display-ready sRGB:
+
+    1. **Spectral integration** – optional per-channel spectral response.
+    2. **Bayer mosaic** – pixel-level colour filtering to a single-channel
+       raw image.
+    3. **Noise** – shot noise (signal-dependent Gaussian) + read noise
+       (ISO-independent Gaussian) added to the n-bit raw data.
+    4. **ISP** (forward) – via an
+       :class:`~deeplens.sensor.isp_modules.isp.InvertibleISP`:
+       black-level correction → white balance → colour matrix →
+       demosaicing → gamma correction.
+
+    The ISP is **invertible**: ``unprocess()`` converts sRGB back to linear
+    RGB for training data generation.
+
+    Attributes:
+        bit (int): ADC bit depth.
+        nbit_max (int): Maximum digital number ``2**bit - 1``.
+        black_level (int): Black level pedestal [DN].
+        bayer_pattern (str): Bayer pattern (e.g. ``"rggb"``).
+        iso_base (int): Base ISO (noise-free reference).
+        isp (InvertibleISP): Embedded ISP pipeline.
+    """
 
     def __init__(
         self,

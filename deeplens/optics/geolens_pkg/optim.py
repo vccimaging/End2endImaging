@@ -48,7 +48,25 @@ from deeplens.optics.config import (
 
 
 class GeoLensOptim:
-    """This class contains the optimization-related functions for the geometric lens design."""
+    """Mixin providing differentiable optimisation for ``GeoLens``.
+
+    Implements gradient-based lens design using PyTorch autograd:
+
+    * **Loss functions** – RMS spot error, focus, surface regularity, gap
+      constraints, material validity.
+    * **Constraint initialisation** – edge-thickness and self-intersection
+      guards.
+    * **Optimizer helpers** – parameter groups with per-type learning rates
+      and cosine annealing schedules.
+    * **High-level ``optimize()``** – curriculum-learning training loop.
+
+    This class is not instantiated directly; it is mixed into
+    :class:`~deeplens.optics.geolens.GeoLens`.
+
+    References:
+        Xinge Yang et al., "Curriculum learning for ab initio deep learned
+        refractive optics," *Nature Communications* 2024.
+    """
 
     # ================================================================
     # Lens design constraints

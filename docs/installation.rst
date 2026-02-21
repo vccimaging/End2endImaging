@@ -6,7 +6,7 @@ Prerequisites
 
 DeepLens requires:
 
-* Python 3.10 or later
+* Python 3.12 or later
 * PyTorch with CUDA support (recommended for GPU acceleration)
 * Conda (optional, but recommended for environment management)
 
@@ -23,7 +23,7 @@ Clone the repository::
 
 Create a conda environment::
 
-    conda create -n deeplens_env python=3.10
+    conda create -n deeplens_env python=3.12
     conda activate deeplens_env
 
 Install PyTorch and dependencies:

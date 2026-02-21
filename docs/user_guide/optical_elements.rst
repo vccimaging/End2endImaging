@@ -14,25 +14,28 @@ Standard spherical surface, the most common optical element.
 .. code-block:: python
 
     from deeplens.optics import Spheric
-    
+
     surface = Spheric(
-        r=50.0,        # Radius of curvature [mm]
-        d=5.0,         # Thickness to next surface [mm]
-        is_square=False,  # Circular aperture
+        c=1/50.0,      # Curvature 1/R [1/mm] (positive = convex toward light)
+        r=5.0,         # Aperture radius [mm]
+        d=5.0,         # Axial vertex position [mm]
+        mat2="N-BK7",  # Material after the surface
         device='cuda'
     )
 
 **Parameters:**
 
-* ``r``: Radius of curvature (positive for convex, negative for concave)
-* ``d``: Thickness/distance to next surface
-* ``is_square``: Aperture shape (True for square, False for circular)
+* ``c``: Surface curvature ``1/R`` [1/mm] (``0`` for flat plane)
+* ``r``: Aperture radius [mm]
+* ``d``: Axial vertex position [mm]
+* ``mat2``: Material name on the transmission side (e.g. ``"N-BK7"``, ``"air"``)
+* ``is_square``: Aperture shape (``True`` for square, ``False`` for circular)
 
 **Mathematical Form:**
 
 .. math::
 
-    z = \\frac{r - \\sqrt{r^2 - x^2 - y^2}}{1}
+    z(\rho) = \frac{c\,\rho^2}{1 + \sqrt{1 - c^2\,\rho^2}}, \quad \rho^2 = x^2 + y^2
 
 Aspheric Surface
 ^^^^^^^^^^^^^^^^

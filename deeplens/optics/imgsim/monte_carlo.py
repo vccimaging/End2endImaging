@@ -13,20 +13,31 @@ from deeplens.optics.config import EPSILON
 
 
 def forward_integral(ray, ps, ks, pointc=None):
-    """Forward Monte-Carlo integral. Usecase example: PSF and Wavefront computation.
+    """Differentiable Monte-Carlo integral over a ray bundle onto a pixel grid.
 
-    NOTE: Loop over N points is necessary because index_put_ with accumulate=True
-    cannot independently accumulate to separate batch slices. Since N is typically
-    small (1-10 field points) while spp is large, this is acceptable.
+    Bins ray hit positions into a ``ks × ks`` grid centred on *pointc* (or the
+    ray centroid if *pointc* is ``None``).  In coherent mode the complex
+    amplitude is accumulated instead of intensity, allowing PSF and wavefront
+    computation.
+
+    The implementation uses ``index_put_`` with ``accumulate=True`` for
+    differentiability.  A loop over the ``N`` field points is used because
+    ``index_put_`` cannot independently accumulate to separate batch slices;
+    this is acceptable because ``N`` is typically small (1–10) while ``spp``
+    is large.
 
     Args:
-        ray: ray object. Shape of [N, spp, 3].
-        ps: pixel size in [mm]
-        ks: kernel size
-        pointc: reference center point, shape [N, 2]
+        ray (Ray): Traced ray bundle with origin ``ray.o`` of shape
+            ``[N, spp, 3]`` (or ``[spp, 3]`` for a single field point).
+        ps (float): Pixel size [mm].
+        ks (int): Output grid size in pixels (square).
+        pointc (torch.Tensor or None, optional): Reference centre for each
+            field point, shape ``[N, 2]``.  If ``None``, the valid-ray
+            centroid is used.
 
     Returns:
-        field: intensity or complex amplitude, shape [N, ks, ks]
+        torch.Tensor: Accumulated field, shape ``[N, ks, ks]``.  Dtype is
+        complex if ``ray.coherent`` is ``True``, otherwise real (float).
     """
     if len(ray.o.shape) == 2:
         single_point = True

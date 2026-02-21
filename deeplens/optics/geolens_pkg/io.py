@@ -26,6 +26,19 @@ from deeplens.optics.geometric_surface.spheric import Spheric
 
 
 class GeoLensIO:
+    """Mixin providing file I/O for ``GeoLens``.
+
+    Supports reading and writing lens prescriptions in three formats:
+
+    * **JSON** (primary): human-readable, supports parenthesised optimisable
+      parameters, e.g. ``"(d)": 5.0``.
+    * **Zemax .zmx**: industry-standard sequential lens file.
+    * **Code V .seq**: Code V sequential format (read-only).
+
+    This class is not instantiated directly; it is mixed into
+    :class:`~deeplens.optics.geolens.GeoLens`.
+    """
+
     def read_lens_zmx(self, filename="./test.zmx"):
         """Load the lens from .zmx file."""
         # Read .zmx file

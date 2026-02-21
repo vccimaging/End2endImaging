@@ -32,6 +32,15 @@ from deeplens.optics.light import Ray
 
 
 class GeoLensVis:
+    """Mixin providing 2-D lens layout and ray visualisation for ``GeoLens``.
+
+    Generates publication-quality cross-section plots showing lens surfaces
+    and traced ray bundles in either the meridional or sagittal plane.
+
+    This class is not instantiated directly; it is mixed into
+    :class:`~deeplens.optics.geolens.GeoLens`.
+    """
+
     # ====================================================================================
     # Ray sampling functions for 2D layout
     # ====================================================================================

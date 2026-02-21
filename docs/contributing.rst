@@ -35,12 +35,12 @@ Getting Started
 
    .. code-block:: bash
 
-      conda create -n deeplens_dev python=3.9
+      conda create -n deeplens_dev python=3.12
       conda activate deeplens_dev
-      pip install -r requirements.txt
-      
+      pip install -e .
+
       # Install development dependencies
-      pip install pytest black flake8 sphinx
+      pip install pytest ruff sphinx sphinx-rtd-theme
 
 4. **Create a Branch**
 
@@ -63,17 +63,17 @@ DeepLens follows PEP 8 style guidelines with some modifications:
 * **Quotes**: Use single quotes for strings
 * **Imports**: Organized in groups (standard library, third-party, local)
 
-Format code with Black:
+Format code with ruff:
 
 .. code-block:: bash
 
-   black deeplens/ --line-length 100
+   ruff format .
 
-Check with flake8:
+Lint with ruff:
 
 .. code-block:: bash
 
-   flake8 deeplens/ --max-line-length 100
+   ruff check .
 
 Code Structure
 ^^^^^^^^^^^^^^
@@ -187,10 +187,10 @@ Contribution Workflow
 
       # Run tests
       pytest tests/
-      
+
       # Check code style
-      black deeplens/ --check
-      flake8 deeplens/
+      ruff format --check .
+      ruff check .
 
 3. **Commit Your Changes**
 
@@ -359,11 +359,11 @@ For development with GPU profiling and debugging:
 .. code-block:: bash
 
    # Install development dependencies
-   pip install pytest pytest-cov black flake8 ipdb
-   
+   pip install pytest pytest-cov ruff ipdb
+
    # Install documentation tools
    pip install sphinx sphinx-rtd-theme
-   
+
    # Install pre-commit hooks (optional)
    pip install pre-commit
    pre-commit install

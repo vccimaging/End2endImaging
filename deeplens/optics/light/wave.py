@@ -27,6 +27,22 @@ from deeplens.optics.base import DeepObj
 # Complex wave field
 # ===================================
 class ComplexWave(DeepObj):
+    """Complex scalar wave field for diffraction simulation.
+
+    Represents a monochromatic, coherent complex amplitude on a uniform
+    rectangular grid.  Propagation methods (ASM, Fresnel, Fraunhofer) are
+    implemented as member functions and use ``torch.fft`` for efficiency.
+
+    Attributes:
+        u (torch.Tensor): Complex amplitude, shape ``[1, 1, H, W]``.
+        wvln (float): Wavelength [µm].
+        k (float): Wave number ``2π / (λ × 10⁻³)`` [mm⁻¹].
+        phy_size (tuple): Physical aperture size (W, H) [mm].
+        ps (float): Pixel pitch [mm] (must be square).
+        res (tuple): Grid resolution (H, W) in pixels.
+        z (float): Current axial position [mm].
+    """
+
     def __init__(
         self,
         u=None,
@@ -35,14 +51,24 @@ class ComplexWave(DeepObj):
         phy_size=(4.0, 4.0),
         res=(2000, 2000),
     ):
-        """Complex wave field.
+        """Initialize a complex wave field.
 
         Args:
-            u (tensor): complex wave field, shape [H, W] or [B, C, H, W].
-            wvln (float): wavelength in [um].
-            z (float): distance in [mm].
-            phy_size (tuple): physical size in [mm].
-            res (tuple): resolution.
+            u (torch.Tensor or None, optional): Initial complex amplitude.
+                Accepted shapes: ``[H, W]``, ``[1, H, W]``, or
+                ``[1, 1, H, W]``.  If ``None`` a zero field is created with
+                the given *res*.
+            wvln (float, optional): Wavelength [µm].  Defaults to ``0.55``.
+            z (float, optional): Initial axial position [mm].  Defaults to
+                ``0.0``.
+            phy_size (tuple, optional): Physical aperture (W, H) [mm].
+                Defaults to ``(4.0, 4.0)``.
+            res (tuple, optional): Grid resolution (H, W) [pixels].  Only
+                used when *u* is ``None``.  Defaults to ``(2000, 2000)``.
+
+        Raises:
+            AssertionError: If the pixel pitch is not square or the
+                wavelength is outside the range ``(0.1, 10)`` µm.
         """
         if u is not None:
             if not u.dtype == torch.complex128:

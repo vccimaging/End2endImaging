@@ -13,14 +13,22 @@ import torch
 # Renderer
 # ===========================================
 class Renderer:
-    """Base class for image simulation and rendering.
+    """Abstract base class for image simulation renderers.
 
-    Supports two types of renderers:
-        1. Camera renderer using optical simulation.
-        2. PSF renderer using calibrated PSF data.
+    Defines the ``render(data_dict)`` interface shared by all concrete
+    renderers (e.g. :class:`Camera`).
+
+    Attributes:
+        device (str): Compute device used for rendering.
     """
 
     def __init__(self, device=None):
+        """Initialize the renderer.
+
+        Args:
+            device (str or None, optional): Compute device.  If ``None``,
+                auto-selects CUDA when available. Defaults to ``None``.
+        """
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device
@@ -49,10 +57,20 @@ class Renderer:
 # Camera renderer
 # ===========================================
 class Camera(Renderer):
-    """Camera system consisting of an optical lens and a sensor.
+    """End-to-end camera model coupling an optical lens with an image sensor.
 
-    This class simulates real camera-captured images for computational imaging
-    applications, including lens aberrations and sensor noise characteristics.
+    Simulates the full image-capture pipeline used in computational imaging
+    research:
+
+    1. **Unprocess**: convert input sRGB to linear RGB via the invertible ISP.
+    2. **Lens simulation**: convolve with the lens PSF (or ray-trace) to
+       produce a degraded linear-RGB image at the sensor plane.
+    3. **Sensor simulation**: add shot + read noise, apply the ISP forward
+       pipeline (Bayer mosaic, demosaicing, gamma) to yield an sRGB output.
+
+    Attributes:
+        lens: Optical lens object (``GeoLens``, ``HybridLens``, etc.).
+        sensor: Image sensor object (``RGBSensor``, ``MonoSensor``, etc.).
     """
 
     def __init__(
@@ -63,6 +81,33 @@ class Camera(Renderer):
         sensor_type="rgb",
         device=None,
     ):
+        """Initialize a camera from lens and sensor configuration files.
+
+        Args:
+            lens_file (str): Path to the lens configuration file.  The
+                accepted format depends on *lens_type*: JSON for all lens
+                types; additionally ``.zmx`` / ``.seq`` for ``"geolens"``.
+            sensor_file (str): Path to a JSON sensor configuration file.
+            lens_type (str, optional): Lens model.  One of ``"geolens"``
+                (default), ``"hybridlens"``, ``"paraxiallens"``,
+                ``"diffraclens"``.
+            sensor_type (str, optional): Sensor model.  One of ``"simple"``,
+                ``"rgb"`` (default), ``"mono"``, ``"event"``.
+            device (str or None, optional): Compute device.  Defaults to
+                ``None`` (auto-selects GPU if available).
+
+        Raises:
+            NotImplementedError: If *lens_type* or *sensor_type* is not
+                recognised.
+
+        Example:
+            >>> cam = Camera(
+            ...     lens_file="datasets/lenses/camera/ef50mm.json",
+            ...     sensor_file="test.json",
+            ...     lens_type="geolens",
+            ...     sensor_type="rgb",
+            ... )
+        """
         super().__init__(device=device)
 
         # Sensor

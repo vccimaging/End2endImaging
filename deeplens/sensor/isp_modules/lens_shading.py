@@ -1,9 +1,10 @@
 """Lens shading correction (LSC).
 
+Corrects vignetting (darkening at image corners) caused by optical properties
+of the lens by applying a spatially-varying gain map.
+
 Reference:
-    [1] https://github.com/QiuJueqin/fast-openISP/blob/master/modules/lsc.py
-    [2] Lens shading causes vignetting (darkening at image corners) due to
-        optical properties of the lens. LSC compensates by applying a gain map.
+    https://github.com/QiuJueqin/fast-openISP/blob/master/modules/lsc.py
 """
 
 import torch

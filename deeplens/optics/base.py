@@ -7,6 +7,18 @@ import torch.nn as nn
 
 
 class DeepObj:
+    """Base class for all differentiable optical objects in DeepLens.
+
+    Provides device management, dtype conversion, and deep-copy support via
+    automatic introspection over instance tensors and nested ``DeepObj``
+    sub-objects.  All lens, surface, material, ray, and wave objects inherit
+    from this class.
+
+    Attributes:
+        dtype (torch.dtype): Current floating-point dtype of all owned tensors.
+        device: Current compute device (set by :meth:`to`).
+    """
+
     def __init__(self, dtype=None):
         self.dtype = torch.get_default_dtype() if dtype is None else dtype
 
@@ -33,10 +45,22 @@ class DeepObj:
         return copy.deepcopy(self)
 
     def to(self, device):
-        """Move all variables to target device.
+        """Move all tensors and nested objects to *device*.
+
+        Recursively walks over every instance attribute and moves tensors,
+        ``nn.Module`` sub-objects, and nested ``DeepObj`` objects to the
+        requested device.
 
         Args:
-            device (cpu or cuda, optional): target device. Defaults to torch.device('cpu').
+            device: Target device, e.g. ``"cuda"``, ``"cpu"``, or a
+                ``torch.device`` instance.
+
+        Returns:
+            DeepObj: ``self`` (for chaining).
+
+        Example:
+            >>> lens = GeoLens(filename="lens.json")
+            >>> lens.to("cuda")  # move all tensors to GPU
         """
         self.device = device
 
@@ -56,10 +80,25 @@ class DeepObj:
         return self
 
     def astype(self, dtype):
-        """Convert all tensors to the given dtype.
+        """Convert all floating-point tensors to *dtype*.
+
+        Also calls ``torch.set_default_dtype(dtype)`` so that subsequent
+        tensor creation uses the same precision.
 
         Args:
-            dtype (torch.dtype): Data type.
+            dtype (torch.dtype): Target floating-point dtype.  Must be one of
+                ``torch.float16``, ``torch.float32``, or ``torch.float64``.
+                Pass ``None`` to be a no-op.
+
+        Returns:
+            DeepObj: ``self`` (for chaining).
+
+        Raises:
+            AssertionError: If *dtype* is not a recognised floating-point dtype.
+
+        Example:
+            >>> lens = GeoLens(filename="lens.json")
+            >>> lens.astype(torch.float64)  # switch to double precision
         """
         if dtype is None:
             return self

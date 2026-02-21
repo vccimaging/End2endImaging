@@ -17,6 +17,26 @@ from deeplens.optics.geometric_surface.base import EPSILON, Surface
 
 
 class Aspheric(Surface):
+    """Even-order aspheric surface.
+
+    The sag function is:
+
+    .. math::
+
+        z(\\rho) = \\frac{c\\,\\rho^2}{1 + \\sqrt{1-(1+k)c^2\\rho^2}}
+                 + \\sum_{i=1}^{n} a_{2i}\\,\\rho^{2i},
+        \\quad \\rho^2 = x^2 + y^2
+
+    All coefficients ``c``, ``k``, and ``ai`` are differentiable torch
+    tensors so they can be optimised with gradient descent.
+
+    Attributes:
+        c (torch.Tensor): Base curvature [1/mm].
+        k (torch.Tensor): Conic constant.
+        ai (torch.Tensor): Even-order aspheric coefficients
+            ``[a2, a4, a6, ...]``.
+    """
+
     def __init__(
         self,
         r,
@@ -30,16 +50,24 @@ class Aspheric(Surface):
         is_square=False,
         device="cpu",
     ):
-        """Initialize aspheric surface.
+        """Initialize an aspheric surface.
 
         Args:
-            r (float): radius of the surface
-            d (tensor): distance from the origin to the surface
-            c (tensor): curvature of the surface
-            k (tensor): conic constant
-            ai (list of tensors): aspheric coefficients
-            mat2 (Material): material of the second medium
-            device (torch.device): device to store the tensor
+            r (float): Aperture radius [mm].
+            d (float): Axial vertex position [mm].
+            c (float): Base curvature ``1/R`` [1/mm].
+            k (float): Conic constant (``0`` = sphere, ``-1`` = paraboloid).
+            ai (list[float] or None): Even-order aspheric coefficients
+                ``[a2, a4, a6, ...]``.  Pass ``None`` or an empty list for a
+                pure conic.
+            mat2 (str or Material): Material on the transmission side.
+            pos_xy (list[float], optional): Lateral offset ``[x, y]`` [mm].
+                Defaults to ``[0.0, 0.0]``.
+            vec_local (list[float], optional): Local normal direction.
+                Defaults to ``[0.0, 0.0, 1.0]``.
+            is_square (bool, optional): Square aperture flag.
+                Defaults to ``False``.
+            device (str, optional): Compute device. Defaults to ``"cpu"``.
         """
         Surface.__init__(
             self,
