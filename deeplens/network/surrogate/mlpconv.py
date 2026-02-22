@@ -6,16 +6,20 @@ import torch.nn.functional as F
 
 
 class MLPConv(nn.Module):
-    """MLP encoder + convolutional decoder proposed in "Differentiable Compound Optics and Processing Pipeline Optimization for End-To-end Camera Design". This network suits for high-k intensity/amplitude PSF function prediction.
+    """MLP encoder + convolutional decoder for high-resolution PSF prediction.
 
-    Input:
-        in_features (int): Input features, shape of [batch_size, in_features].
-        ks (int): The size of the output image.
-        channels (int): The number of output channels. Defaults to 3.
-        activation (str): The activation function. Defaults to 'relu'.
+    Uses a linear encoder to produce a low-resolution feature map, then a
+    transposed-convolution decoder to upsample to the target PSF resolution.
+    The output is Sigmoid-activated and L1-normalized per spatial dimension.
 
-    Output:
-        x (Tensor): The output image. Shape of [batch_size, channels, ks, ks].
+    Reference: "Differentiable Compound Optics and Processing Pipeline Optimization
+    for End-To-end Camera Design".
+
+    Args:
+        in_features: Number of input features (e.g., field angle + wavelength).
+        ks: Spatial size of the output PSF. Must be a multiple of 32 if > 32.
+        channels: Number of output channels. Defaults to 3.
+        activation: Activation function, ``"relu"`` or ``"sigmoid"``. Defaults to ``"relu"``.
     """
 
     def __init__(self, in_features, ks, channels=3, activation="relu"):
@@ -69,6 +73,14 @@ class MLPConv(nn.Module):
             self.activation = nn.Sigmoid()
 
     def forward(self, x):
+        """Forward pass.
+
+        Args:
+            x: Input tensor of shape ``(batch_size, in_features)``.
+
+        Returns:
+            Normalized PSF tensor of shape ``(batch_size, channels, ks, ks)``.
+        """
         # Encode the input using the MLP
         encoded = self.encoder(x)
 

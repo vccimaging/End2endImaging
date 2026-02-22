@@ -61,21 +61,11 @@ extra_javascript:
 
 nav:
   - Home: index.md
-  - Getting Started:
-    - Installation: installation.md
-    - Quickstart: quickstart.md
-    - Architecture: user_guide/architecture.md
-  - Tutorials:
-    - Overview: tutorials.md
-    - Automated Lens Design: examples/automated_lens_design.md
-    - End-to-End Design: examples/end2end_design.md
-    - Image Simulation: examples/image_simulation.md
-    - Hybrid Lenses: examples/hybrid_lenses.md
+  - Installation: installation.md
+  - Quickstart: quickstart.md
   - API Reference:
-    - Optics: api/optics.md
-    - Sensor: api/sensor.md
-    - Network: api/network.md
-  - About:
-    - Contributing: contributing.md
-    - Code of Conduct: code_of_conduct.md
-    - Citation: citation.md
+      - Optics: api/optics.md
+      - Sensor: api/sensor.md
+      - Network: api/network.md
+  - Examples: examples.md
+  - Contributing: contributing.md

@@ -11,6 +11,23 @@ import torch.nn.functional as F
 
 
 class NAFNet(nn.Module):
+    """Nonlinear Activation Free Network for image restoration.
+
+    A U-Net-style encoder-decoder with NAFBlocks that replace nonlinear activations
+    with SimpleGate (element-wise multiplication of channel-split halves). Includes
+    a global residual connection from input to output.
+
+    Reference: "Simple Baselines for Image Restoration" (ECCV 2022).
+
+    Args:
+        in_chan: Number of input channels. Defaults to 3.
+        out_chan: Number of output channels. Defaults to 3.
+        width: Base channel width. Defaults to 32.
+        middle_blk_num: Number of NAFBlocks in the bottleneck. Defaults to 1.
+        enc_blk_nums: Number of NAFBlocks per encoder stage. Defaults to ``[1, 1, 1, 28]``.
+        dec_blk_nums: Number of NAFBlocks per decoder stage. Defaults to ``[1, 1, 1, 1]``.
+    """
+
     def __init__(
         self,
         in_chan=3,
@@ -86,6 +103,14 @@ class NAFNet(nn.Module):
                     nn.init.constant_(m.bias, 0) 
 
     def forward(self, inp):
+        """Forward pass with global residual connection.
+
+        Args:
+            inp: Input image tensor of shape ``(B, in_chan, H, W)``.
+
+        Returns:
+            Restored image tensor of shape ``(B, out_chan, H, W)``.
+        """
         B, C, H, W = inp.shape
         inp = self.check_image_size(inp)
 

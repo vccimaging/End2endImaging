@@ -1,0 +1,80 @@
+# Quickstart
+
+This guide walks through the core DeepLens workflow: loading a lens, computing PSFs, and rendering images.
+
+## Load a Lens
+
+`GeoLens` is the primary lens model — a differentiable multi-element refractive lens loaded from a JSON, Zemax `.zmx`, or Code V `.seq` file.
+
+```python
+from deeplens import GeoLens
+
+lens = GeoLens(filename="datasets/lenses/cellphone/cellphone80deg.json")
+lens.summary()
+```
+
+## Compute a PSF
+
+The point spread function (PSF) describes how the lens images a point source at a given field angle and wavelength.
+
+```python
+# Single on-axis PSF (monochromatic)
+psf = lens.psf(point=[0.0, 0.0, -10000.0], ks=128, wvln=0.589)
+
+# RGB PSF (weighted sum over visible wavelengths)
+psf_rgb = lens.psf_rgb(point=[0.0, 0.0, -10000.0], ks=128)
+```
+
+## Visualize the PSF
+
+```python
+import matplotlib.pyplot as plt
+
+plt.imshow(psf_rgb.squeeze().permute(1, 2, 0).detach().cpu().numpy())
+plt.title("RGB PSF")
+plt.axis("off")
+plt.show()
+```
+
+## Render an Image
+
+Render a full image by convolving with the lens PSF:
+
+```python
+import torchvision
+
+img = torchvision.io.read_image("datasets/images/example.png").float() / 255.0
+img = img.unsqueeze(0)  # (1, 3, H, W)
+
+rendered = lens.render(img, depth=10000.0)
+```
+
+## Lens Types
+
+DeepLens provides several lens models for different use cases:
+
+| Lens Type | Description | Use Case |
+|-----------|-------------|----------|
+| `GeoLens` | Multi-element refractive ray tracing | Automated lens design, image simulation |
+| `HybridLens` | Refractive lens + diffractive optical element | Hybrid optics co-design |
+| `DiffractiveLens` | Pure wave-optics diffractive surfaces | Flat optics, DOE design |
+| `PSFNetLens` | Neural network PSF surrogate | Fast PSF approximation |
+| `ParaxialLens` | Thin-lens / circle-of-confusion model | Simple bokeh simulation |
+
+## Camera Pipeline
+
+Combine a lens with a sensor for end-to-end image simulation:
+
+```python
+from deeplens import GeoLens, Camera
+from deeplens.sensor import RGBSensor
+
+lens = GeoLens(filename="datasets/lenses/cellphone/cellphone80deg.json")
+sensor = RGBSensor(res=(1920, 1080))
+camera = Camera(lens=lens, sensor=sensor)
+```
+
+## Next Steps
+
+- [API Reference](api/optics.md) — full documentation for all classes
+- [Examples](examples.md) — lens design, end-to-end optimization, and more

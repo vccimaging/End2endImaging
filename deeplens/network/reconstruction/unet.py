@@ -8,6 +8,16 @@ import torch.nn as nn
 
 
 class UNet(nn.Module):
+    """U-Net with residual skip connections for image restoration.
+
+    A 3-level encoder-decoder with dense BasicBlocks and PixelShuffle upsampling.
+    Uses additive skip connections between encoder and decoder stages.
+
+    Args:
+        in_channels: Number of input channels. Defaults to 3.
+        out_channels: Number of output channels. Defaults to 3.
+    """
+
     def __init__(self, in_channels=3, out_channels=3):
         super().__init__()
         self.pre = self.pre = nn.Sequential(
@@ -35,6 +45,14 @@ class UNet(nn.Module):
         )
 
     def forward(self, x):
+        """Forward pass.
+
+        Args:
+            x: Input image tensor of shape ``(B, in_channels, H, W)``.
+
+        Returns:
+            Output tensor of shape ``(B, out_channels, H, W)``.
+        """
         x0 = self.pre(x)
         x0 = self.conv00(x0)
         x1 = self.down0(x0)

@@ -6,6 +6,21 @@ import torch.nn.functional as F
 
 
 class Siren(nn.Module):
+    """Single SIREN (Sinusoidal Representation Network) layer.
+
+    A linear layer followed by a sine activation. Uses the initialization
+    scheme from "Implicit Neural Representations with Periodic Activation Functions".
+
+    Args:
+        dim_in: Input dimension.
+        dim_out: Output dimension.
+        w0: Frequency multiplier for the sine activation. Defaults to 1.0.
+        c: Constant for weight initialization. Defaults to 6.0.
+        is_first: Whether this is the first layer (uses different init). Defaults to False.
+        use_bias: Whether to include a bias term. Defaults to True.
+        activation: Custom activation module. If None, uses ``Sine(w0)``.
+    """
+
     def __init__(
         self,
         dim_in,
@@ -35,6 +50,14 @@ class Siren(nn.Module):
         weight.uniform_(-w_std, w_std)
 
     def forward(self, x):
+        """Forward pass.
+
+        Args:
+            x: Input tensor of shape ``(..., dim_in)``.
+
+        Returns:
+            Output tensor of shape ``(..., dim_out)``.
+        """
         out = F.linear(x, self.weight, self.bias)
         out = self.activation(out)
         return out

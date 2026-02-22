@@ -216,6 +216,31 @@ class Upsample(nn.Module):
 ##########################################################################
 ##---------- Restormer -----------------------
 class Restormer(nn.Module):
+    """Restormer: Efficient Transformer for high-resolution image restoration.
+
+    A multi-scale encoder-decoder transformer using Multi-DConv Head Transposed
+    Self-Attention (MDTA) and Gated-DConv Feed-Forward Networks (GDFN). Includes
+    a global residual connection from input to output.
+
+    Reference: Zamir et al., "Restormer: Efficient Transformer for High-Resolution
+    Image Restoration" (CVPR 2022).
+
+    Args:
+        inp_channels: Number of input channels. Defaults to 3.
+        out_channels: Number of output channels. Defaults to 3.
+        dim: Base embedding dimension. Defaults to 48.
+        num_blocks: Number of transformer blocks per encoder/decoder stage.
+            Defaults to ``[4, 6, 6, 8]``.
+        num_refinement_blocks: Number of refinement blocks after the decoder.
+            Defaults to 4.
+        heads: Number of attention heads per stage. Defaults to ``[1, 2, 4, 8]``.
+        ffn_expansion_factor: Hidden dimension multiplier in GDFN. Defaults to 2.66.
+        bias: Whether to use bias in convolutions. Defaults to False.
+        LayerNorm_type: ``"WithBias"`` or ``"BiasFree"``. Defaults to ``"WithBias"``.
+        dual_pixel_task: If True, uses skip connection for dual-pixel defocus
+            deblurring (set ``inp_channels=6``). Defaults to False.
+    """
+
     def __init__(
         self,
         inp_channels=3,
@@ -363,6 +388,14 @@ class Restormer(nn.Module):
         )
 
     def forward(self, inp_img):
+        """Forward pass with global residual connection.
+
+        Args:
+            inp_img: Input image tensor of shape ``(B, inp_channels, H, W)``.
+
+        Returns:
+            Restored image tensor of shape ``(B, out_channels, H, W)``.
+        """
         inp_enc_level1 = self.patch_embed(inp_img)
         out_enc_level1 = self.encoder_level1(inp_enc_level1)
 
