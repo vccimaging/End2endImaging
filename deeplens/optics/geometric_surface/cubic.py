@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from deeplens.optics.geometric_surface.base import Surface
+from .base import Surface
 
 
 class Cubic(Surface):

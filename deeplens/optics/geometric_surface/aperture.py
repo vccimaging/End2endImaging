@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from deeplens.optics.geometric_surface.plane import Plane
+from .plane import Plane
 
 
 class Aperture(Plane):
@@ -153,7 +153,7 @@ class Aperture(Plane):
     def _create_rim(self, n_rings, n_arms):
         """Create rim (outer edge) vertices for aperture."""
         # Import RimCurve from base module
-        from deeplens.optics.geometric_surface.base import RimCurve
+        from .base import RimCurve
 
         # Get outer ring vertices (second half of vertices array)
         start_idx = n_arms  # Start of outer ring

@@ -6,7 +6,7 @@
 
 import torch
 
-from deeplens.optics.geometric_surface.base import Surface, EPSILON
+from .base import Surface, EPSILON
 
 
 class Spiral(Surface):

@@ -11,7 +11,7 @@ Reference:
 """
 
 import torch
-from deeplens.optics.diffractive_surface.diffractive import DiffractiveSurface
+from .diffractive import DiffractiveSurface
 
 
 class Fresnel(DiffractiveSurface):

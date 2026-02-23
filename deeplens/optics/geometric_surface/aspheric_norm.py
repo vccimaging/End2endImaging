@@ -15,7 +15,7 @@ Note: one problem for normalized aspheric coefficients is that when norm_r is sm
 import numpy as np
 import torch
 
-from deeplens.optics.geometric_surface.base import EPSILON, Surface
+from .base import EPSILON, Surface
 
 
 class AsphericNorm(Surface):

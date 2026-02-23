@@ -19,10 +19,10 @@ import torch
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-from deeplens.optics.geometric_surface import Aperture, Aspheric, AsphericNorm, Spheric, ThinLens, Plane
-from deeplens.optics.material import MATERIAL_data
-from deeplens.optics.config import WAVE_RGB
-from deeplens.optics.geolens import GeoLens
+from ..geometric_surface import Aperture, Aspheric, AsphericNorm, Spheric, ThinLens, Plane
+from ..material import MATERIAL_data
+from ..config import WAVE_RGB
+from ..geolens import GeoLens
 
 # Common optical glasses for random material selection
 COMMON_GLASSES = [
@@ -57,7 +57,7 @@ def create_lens(
         thickness: Total thickness if specified.
         surf_list: List of surface types defining each lens element and aperture.
     """
-    from deeplens.optics.geolens import GeoLens
+    from ..geolens import GeoLens
 
     # Compute lens parameters
     aper_r = foclen / fnum / 2

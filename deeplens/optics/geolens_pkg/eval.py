@@ -50,7 +50,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from deeplens.optics.config import (
+from ..config import (
     DEFAULT_WAVE,
     DEPTH,
     EPSILON,
@@ -59,7 +59,7 @@ from deeplens.optics.config import (
     SPP_PSF,
     WAVE_RGB,
 )
-from deeplens.optics.light import Ray
+from ..light import Ray
 
 # RGB color definitions for wavelength visualization
 RGB_RED = "#CC0000"

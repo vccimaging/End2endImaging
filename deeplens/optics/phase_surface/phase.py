@@ -5,9 +5,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from deeplens.optics.config import EPSILON
-from deeplens.optics.base import DeepObj
-from deeplens.optics.material import Material
+from ..config import EPSILON
+from ..base import DeepObj
+from ..material import Material
 
 
 class Phase(DeepObj):

@@ -2,7 +2,7 @@
 
 import torch
 
-from deeplens.optics.phase_surface.phase import Phase
+from .phase import Phase
 
 
 class GratingPhase(Phase):

@@ -9,9 +9,9 @@
 import numpy as np
 import torch
 
-from deeplens.optics.geometric_surface.base import Surface
-from deeplens.optics.geometric_surface.plane import Plane  
-from deeplens.optics.geometric_surface.mirror import Mirror
+from .base import Surface
+from .plane import Plane
+from .mirror import Mirror
 
 
 class Prism(Surface):

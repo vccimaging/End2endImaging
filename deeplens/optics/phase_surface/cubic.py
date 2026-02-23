@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from deeplens.optics.phase_surface.phase import Phase
+from .phase import Phase
 
 
 class CubicPhase(Phase):

@@ -27,8 +27,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from deeplens.optics.config import DEFAULT_WAVE, DEPTH, WAVE_RGB
-from deeplens.optics.light import Ray
+from ..config import DEFAULT_WAVE, DEPTH, WAVE_RGB
+from ..light import Ray
 
 
 class GeoLensVis:

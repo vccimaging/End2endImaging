@@ -32,7 +32,7 @@ References:
 import numpy as np
 import torch
 
-from deeplens.optics.geometric_surface.base import EPSILON, Surface
+from .base import EPSILON, Surface
 
 
 def compute_qbfs_polynomials(u2, n_terms):

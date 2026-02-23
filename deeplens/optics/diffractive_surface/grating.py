@@ -12,7 +12,7 @@ diffracts light into multiple diffraction orders.
 """
 
 import torch
-from deeplens.optics.diffractive_surface.diffractive import DiffractiveSurface
+from .diffractive import DiffractiveSurface
 
 
 class Grating(DiffractiveSurface):

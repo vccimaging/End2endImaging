@@ -2,8 +2,8 @@
 
 import torch
 
-from deeplens.optics.config import EPSILON
-from deeplens.optics.phase_surface.phase import Phase
+from ..config import EPSILON
+from .phase import Phase
 
 
 class NURBSPhase(Phase):

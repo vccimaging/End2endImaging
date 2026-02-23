@@ -1,7 +1,7 @@
 """Mirror surface."""
 
-from deeplens.optics.geometric_surface.base import Surface
-from deeplens.optics.geometric_surface.plane import Plane
+from .base import Surface
+from .plane import Plane
 
 
 class Mirror(Plane):

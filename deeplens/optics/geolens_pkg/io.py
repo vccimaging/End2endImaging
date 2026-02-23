@@ -20,9 +20,7 @@ import math
 
 import torch
 
-from deeplens.optics.geometric_surface.aperture import Aperture
-from deeplens.optics.geometric_surface.aspheric import Aspheric
-from deeplens.optics.geometric_surface.spheric import Spheric
+from ..geometric_surface import Aperture, Aspheric, Spheric
 
 
 class GeoLensIO:

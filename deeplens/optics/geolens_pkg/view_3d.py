@@ -18,9 +18,9 @@ from typing import List, Optional
 import numpy as np
 import torch
 
-from deeplens.optics.config import DEFAULT_WAVE
-from deeplens.optics import Ray
-from deeplens.optics.geometric_surface import Aperture
+from ..config import DEFAULT_WAVE
+from ..light import Ray
+from ..geometric_surface import Aperture
 
 
 # ==========================================================

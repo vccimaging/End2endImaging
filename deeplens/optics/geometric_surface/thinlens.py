@@ -3,7 +3,7 @@
 import torch
 import torch.nn.functional as F
 
-from deeplens.optics.geometric_surface.plane import Plane
+from .plane import Plane
 
 
 class ThinLens(Plane):

@@ -26,7 +26,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from deeplens.optics.config import DEPTH
+from ..config import DEPTH
 
 
 class GeoLensTolerance:
