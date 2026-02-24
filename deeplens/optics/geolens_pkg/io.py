@@ -16,11 +16,13 @@ Functions:
         - write_lens_seq(): Write lens to Code V .seq file
 """
 
+import json
 import math
 
 import torch
 
-from ..geometric_surface import Aperture, Aspheric, Spheric
+from ..geometric_surface import Aperture, Aspheric, AsphericNorm, Cubic, Plane, Spheric, ThinLens
+from ..phase_surface import Phase
 
 
 class GeoLensIO:
@@ -733,3 +735,122 @@ class GeoLensIO:
 
         print(f"Lens written to CODE V file: {filename}")
         return self
+
+    # ====================================================================================
+    # JSON lens file I/O
+    # ====================================================================================
+    def read_lens_json(self, filename="./test.json"):
+        """Read the lens from a JSON file.
+
+        Loads lens configuration including surfaces, materials, and optical properties
+        from the DeepLens native JSON format.
+
+        Args:
+            filename (str, optional): Path to the JSON lens file. Defaults to './test.json'.
+
+        Note:
+            After loading, the lens is moved to self.device and post_computation is called
+            to calculate derived properties.
+        """
+        self.surfaces = []
+        self.materials = []
+        with open(filename, "r") as f:
+            data = json.load(f)
+            d = 0.0
+            for idx, surf_dict in enumerate(data["surfaces"]):
+                surf_dict["d"] = d
+                surf_dict["surf_idx"] = idx
+
+                if surf_dict["type"] == "Aperture":
+                    s = Aperture.init_from_dict(surf_dict)
+
+                elif surf_dict["type"] == "Aspheric":
+                    # s = Aspheric.init_from_dict(surf_dict)
+                    s = AsphericNorm.init_from_dict(surf_dict)
+
+                elif surf_dict["type"] == "Cubic":
+                    s = Cubic.init_from_dict(surf_dict)
+
+                # elif surf_dict["type"] == "GaussianRBF":
+                #     s = GaussianRBF.init_from_dict(surf_dict)
+
+                # elif surf_dict["type"] == "NURBS":
+                #     s = NURBS.init_from_dict(surf_dict)
+
+                elif surf_dict["type"] == "Phase":
+                    s = Phase.init_from_dict(surf_dict)
+
+                elif surf_dict["type"] == "Plane":
+                    s = Plane.init_from_dict(surf_dict)
+
+                # elif surf_dict["type"] == "PolyEven":
+                #     s = PolyEven.init_from_dict(surf_dict)
+
+                elif surf_dict["type"] == "Stop":
+                    s = Aperture.init_from_dict(surf_dict)
+
+                elif surf_dict["type"] == "Spheric":
+                    s = Spheric.init_from_dict(surf_dict)
+
+                elif surf_dict["type"] == "ThinLens":
+                    s = ThinLens.init_from_dict(surf_dict)
+
+                else:
+                    raise Exception(
+                        f"Surface type {surf_dict['type']} is not implemented in GeoLens.read_lens_json()."
+                    )
+
+                self.surfaces.append(s)
+                d += surf_dict["d_next"]
+
+        self.d_sensor = torch.tensor(d)
+        self.lens_info = data.get("info", "None")
+        self.enpd = data.get("enpd", None)
+        self.float_enpd = True if self.enpd is None else False
+        self.float_foclen = False
+        self.float_rfov = False
+        self.r_sensor = data["r_sensor"]
+
+        self.to(self.device)
+
+        # Set sensor size and resolution
+        sensor_res = data.get("sensor_res", (2000, 2000))
+        self.set_sensor_res(sensor_res=sensor_res)
+        self.post_computation()
+
+    def write_lens_json(self, filename="./test.json"):
+        """Write the lens to a JSON file.
+
+        Saves the complete lens configuration including all surfaces, materials,
+        focal length, F-number, and sensor properties to the DeepLens JSON format.
+
+        Args:
+            filename (str, optional): Path for the output JSON file. Defaults to './test.json'.
+        """
+        data = {}
+        data["info"] = self.lens_info if hasattr(self, "lens_info") else "None"
+        data["foclen"] = round(self.foclen, 4)
+        data["fnum"] = round(self.fnum, 4)
+        if self.float_enpd is False:
+            data["enpd"] = round(self.enpd, 4)
+        data["r_sensor"] = self.r_sensor
+        data["(d_sensor)"] = round(self.d_sensor.item(), 4)
+        data["(sensor_size)"] = [round(i, 4) for i in self.sensor_size]
+        data["surfaces"] = []
+        for i, s in enumerate(self.surfaces):
+            surf_dict = {"idx": i}
+            surf_dict.update(s.surf_dict())
+            if i < len(self.surfaces) - 1:
+                surf_dict["d_next"] = round(
+                    self.surfaces[i + 1].d.item() - self.surfaces[i].d.item(), 4
+                )
+            else:
+                surf_dict["d_next"] = round(
+                    self.d_sensor.item() - self.surfaces[i].d.item(), 4
+                )
+
+            data["surfaces"].append(surf_dict)
+
+        with open(filename, "w") as f:
+            json.dump(data, f, indent=4)
+        print(f"Lens written to {filename}")

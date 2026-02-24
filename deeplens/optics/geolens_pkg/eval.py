@@ -50,6 +50,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from PIL import Image
+
 from ..config import (
     DEFAULT_WAVE,
     DEPTH,
@@ -57,6 +59,7 @@ from ..config import (
     GEO_GRID,
     SPP_CALC,
     SPP_PSF,
+    SPP_RENDER,
     WAVE_RGB,
 )
 from ..light import Ray
@@ -1085,3 +1088,138 @@ class GeoLensEval:
                 )
 
         return chief_ray_o, chief_ray_d
+
+    # ====================================================================================
+    # Spot and comprehensive analysis
+    # ====================================================================================
+    def analysis_spot(self, num_field=3, depth=float("inf")):
+        """Compute sensor plane ray spot RMS error and radius.
+
+        Analyzes spot sizes across the field of view for multiple wavelengths
+        (red, green, blue) and reports statistics.
+
+        Args:
+            num_field (int, optional): Number of field positions to analyze along the
+                radial direction. Defaults to 3.
+            depth (float, optional): Depth of the point source. Use float('inf') for
+                collimated light. Defaults to float('inf').
+
+        Returns:
+            dict: Spot analysis results keyed by field position (e.g., 'fov0.0', 'fov0.5').
+                Each entry contains 'rms' (RMS radius in um) and 'radius' (geometric radius in um).
+        """
+        rms_radius_fields = []
+        geo_radius_fields = []
+        for i, wvln in enumerate([WAVE_RGB[1], WAVE_RGB[0], WAVE_RGB[2]]):
+            # Sample rays along meridional (y) direction, shape [num_field, num_rays, 3]
+            ray = self.sample_radial_rays(
+                num_field=num_field, depth=depth, num_rays=SPP_PSF, wvln=wvln
+            )
+            ray = self.trace2sensor(ray)
+
+            # Green light point center for reference, shape [num_field, 1, 2]
+            if i == 0:
+                ray_xy_center_green = ray.centroid()[..., :2].unsqueeze(-2)
+
+            # Calculate RMS spot size and radius for different FoVs
+            ray_xy_norm = (
+                ray.o[..., :2] - ray_xy_center_green
+            ) * ray.is_valid.unsqueeze(-1)
+            spot_rms = (
+                ((ray_xy_norm**2).sum(-1) * ray.is_valid).sum(-1)
+                / (ray.is_valid.sum(-1) + EPSILON)
+            ).sqrt()
+            spot_radius = (ray_xy_norm**2).sum(-1).sqrt().max(dim=-1).values
+
+            # Append to list
+            rms_radius_fields.append(spot_rms)
+            geo_radius_fields.append(spot_radius)
+
+        # Average over wavelengths, shape [num_field]
+        avg_rms_radius_um = torch.stack(rms_radius_fields, dim=0).mean(dim=0) * 1000.0
+        avg_geo_radius_um = torch.stack(geo_radius_fields, dim=0).mean(dim=0) * 1000.0
+
+        # Print results
+        print(f"Ray spot analysis results for depth {depth}:")
+        print(
+            f"RMS radius: FoV (0.0) {avg_rms_radius_um[0]:.3f} um, FoV (0.5) {avg_rms_radius_um[num_field // 2]:.3f} um, FoV (1.0) {avg_rms_radius_um[-1]:.3f} um"
+        )
+        print(
+            f"Geo radius: FoV (0.0) {avg_geo_radius_um[0]:.3f} um, FoV (0.5) {avg_geo_radius_um[num_field // 2]:.3f} um, FoV (1.0) {avg_geo_radius_um[-1]:.3f} um"
+        )
+
+        # Save to dict
+        rms_results = {}
+        fov_ls = torch.linspace(0, 1, num_field)
+        for i in range(num_field):
+            fov = round(fov_ls[i].item(), 2)
+            rms_results[f"fov{fov}"] = {
+                "rms": round(avg_rms_radius_um[i].item(), 4),
+                "radius": round(avg_geo_radius_um[i].item(), 4),
+            }
+
+        return rms_results
+
+    @torch.no_grad()
+    def analysis(
+        self,
+        save_name="./lens",
+        depth=float("inf"),
+        render=False,
+        render_unwarp=False,
+        lens_title=None,
+        show=False,
+    ):
+        """Analyze the optical lens.
+
+        Args:
+            save_name (str): save name.
+            depth (float): object depth distance.
+            render (bool): whether render an image.
+            render_unwarp (bool): whether unwarp the rendered image.
+            lens_title (str): lens title
+            show (bool): whether to show the rendered image.
+        """
+        # Draw lens layout and ray path
+        self.draw_layout(
+            filename=f"{save_name}.png",
+            lens_title=lens_title,
+            depth=depth,
+            show=show,
+        )
+
+        # Draw spot diagram
+        self.draw_spot_radial(
+            save_name=f"{save_name}_spot.png",
+            depth=depth,
+            show=show,
+        )
+
+        # Draw MTF
+        if depth == float("inf"):
+            # This is a hack to draw MTF for infinite depth
+            self.draw_mtf(
+                depth_list=[DEPTH], save_name=f"{save_name}_mtf.png", show=show
+            )
+        else:
+            self.draw_mtf(
+                depth_list=[depth], save_name=f"{save_name}_mtf.png", show=show
+            )
+
+        # Calculate RMS error
+        self.analysis_spot(depth=depth)
+
+        # Render an image, compute PSNR and SSIM
+        if render:
+            depth = DEPTH if depth == float("inf") else depth
+            img_org = Image.open("./datasets/charts/NBS_1963_1k.png").convert("RGB")
+            img_org = np.array(img_org)
+            self.analysis_rendering(
+                img_org,
+                depth=depth,
+                spp=SPP_RENDER,
+                unwarp=render_unwarp,
+                save_name=f"{save_name}_render",
+                noise=0.01,
+                show=show,
+            )

@@ -45,6 +45,8 @@ from ..config import (
     SPP_PSF,
     WAVE_RGB,
 )
+from ..geometric_surface import Aperture, Aspheric, AsphericNorm, Plane, Spheric, ThinLens
+from ..phase_surface import Phase
 
 
 class GeoLensOptim:
@@ -705,3 +707,122 @@ class GeoLensOptim:
             pbar.update(1)
 
         pbar.close()
+
+    # ====================================================================================
+    # Optimizer helpers
+    # ====================================================================================
+    def get_optimizer_params(
+        self,
+        lrs=[1e-4, 1e-4, 1e-2, 1e-4],
+        decay=0.01,
+        optim_mat=False,
+        optim_surf_range=None,
+    ):
+        """Get optimizer parameters for different lens surface.
+
+        Recommendation:
+            For cellphone lens: [d, c, k, a], [1e-4, 1e-4, 1e-1, 1e-4]
+            For camera lens: [d, c, 0, 0], [1e-3, 1e-4, 0, 0]
+
+        Args:
+            lrs (list): learning rate for different parameters.
+            decay (float): decay rate for higher order a. Defaults to 0.01.
+            optim_mat (bool): whether to optimize material. Defaults to False.
+            optim_surf_range (list): surface indices to be optimized. Defaults to None.
+
+        Returns:
+            list: optimizer parameters
+        """
+        # Find surfaces to be optimized
+        if optim_surf_range is None:
+            # optim_surf_range = self.find_diff_surf()
+            optim_surf_range = range(len(self.surfaces))
+
+        # If lr for each surface is a list is given
+        if isinstance(lrs[0], list):
+            return self.get_optimizer_params_manual(
+                lrs=lrs, optim_mat=optim_mat, optim_surf_range=optim_surf_range
+            )
+
+        # Optimize lens surface parameters
+        params = []
+        for surf_idx in optim_surf_range:
+            surf = self.surfaces[surf_idx]
+
+            if isinstance(surf, Aperture):
+                params += surf.get_optimizer_params(lrs=[lrs[0]])
+
+            elif isinstance(surf, Aspheric):
+                params += surf.get_optimizer_params(
+                    lrs=lrs[:4], decay=decay, optim_mat=optim_mat
+                )
+
+            elif isinstance(surf, AsphericNorm):
+                params += surf.get_optimizer_params(
+                    lrs=lrs[:4], decay=decay, optim_mat=optim_mat
+                )
+
+            elif isinstance(surf, Phase):
+                params += surf.get_optimizer_params(lrs=[lrs[0], lrs[4]])
+
+            # elif isinstance(surf, GaussianRBF):
+            #     params += surf.get_optimizer_params(lrs=lr, optim_mat=optim_mat)
+
+            # elif isinstance(surf, NURBS):
+            #     params += surf.get_optimizer_params(lrs=lr, optim_mat=optim_mat)
+
+            elif isinstance(surf, Plane):
+                params += surf.get_optimizer_params(lrs=[lrs[0]], optim_mat=optim_mat)
+
+            # elif isinstance(surf, PolyEven):
+            #     params += surf.get_optimizer_params(lrs=lr, optim_mat=optim_mat)
+
+            elif isinstance(surf, Spheric):
+                params += surf.get_optimizer_params(
+                    lrs=[lrs[0], lrs[1]], optim_mat=optim_mat
+                )
+
+            elif isinstance(surf, ThinLens):
+                params += surf.get_optimizer_params(
+                    lrs=[lrs[0], lrs[1]], optim_mat=optim_mat
+                )
+
+            else:
+                raise Exception(
+                    f"Surface type {surf.__class__.__name__} is not supported for optimization yet."
+                )
+
+        # Optimize sensor place
+        self.d_sensor.requires_grad = True
+        params += [{"params": self.d_sensor, "lr": lrs[0]}]
+
+        return params
+
+    def get_optimizer(
+        self,
+        lrs=[1e-4, 1e-4, 1e-1, 1e-4],
+        decay=0.01,
+        optim_surf_range=None,
+        optim_mat=False,
+    ):
+        """Get optimizers and schedulers for different lens parameters.
+
+        Args:
+            lrs (list): learning rate for different parameters [c, d, k, a]. Defaults to [1e-4, 1e-4, 0, 1e-4].
+            decay (float): decay rate for higher order a. Defaults to 0.2.
+            optim_surf_range (list): surface indices to be optimized. Defaults to None.
+            optim_mat (bool): whether to optimize material. Defaults to False.
+
+        Returns:
+            list: optimizer parameters
+        """
+        # Initialize lens design constraints (edge thickness, etc.)
+        self.init_constraints()
+
+        # Get optimizer
+        params = self.get_optimizer_params(
+            lrs=lrs, decay=decay, optim_surf_range=optim_surf_range, optim_mat=optim_mat
+        )
+        optimizer = torch.optim.Adam(params)
+        # optimizer = torch.optim.SGD(params)
+        return optimizer
