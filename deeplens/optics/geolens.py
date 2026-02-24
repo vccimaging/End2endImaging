@@ -10,15 +10,11 @@ Technical Paper:
     Xinge Yang, Qiang Fu, and Wolfgang Heidrich, "Curriculum learning for ab initio deep learned refractive optics," Nature Communications 2024.
 """
 
-import json
 import math
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn.functional as F
-from PIL import Image
-from torchvision.utils import save_image
 
 from .config import (
     DEFAULT_WAVE,
@@ -27,7 +23,6 @@ from .config import (
     EPSILON,
     PSF_KS,
     SPP_CALC,
-    SPP_COHERENT,
     SPP_PSF,
     SPP_RENDER,
     WAVE_RGB,
@@ -40,22 +35,9 @@ from .geolens_pkg.tolerance import GeoLensTolerance
 from .geolens_pkg.view_3d import GeoLensVis3D
 from .geolens_pkg.vis import GeoLensVis
 from .lens import Lens
-from .geometric_surface import (
-    Aperture,
-    Aspheric,
-    AsphericNorm,
-    Cubic,
-    Plane,
-    Spheric,
-    ThinLens,
-)
-from .phase_surface import Phase
+from .geometric_surface import Aperture
 from .material import Material
-from .imgsim import forward_integral
-from .light import Ray, AngularSpectrumMethod
-from .utils import diff_float
-from skimage.metrics import peak_signal_noise_ratio, structural_similarity
-
+from .light import Ray
 
 class GeoLens(
     GeoLensPSF,
@@ -959,92 +941,6 @@ class GeoLens(
             img, distortion_map, align_corners=True
         )  # shape (B, C, Himg, Wimg)
         return img_unwarpped
-
-    @torch.no_grad()
-    def analysis_rendering(
-        self,
-        img_org,
-        save_name=None,
-        depth=DEPTH,
-        spp=SPP_RENDER,
-        unwarp=False,
-        noise=0.0,
-        method="ray_tracing",
-        show=False,
-    ):
-        """Render a single image for visualization and analysis.
-
-        Args:
-            img_org (Tensor): Original image with shape [H, W, 3].
-            save_name (str, optional): Path prefix for saving rendered images. Defaults to None.
-            depth (float, optional): Depth of object image. Defaults to DEPTH.
-            spp (int, optional): Sample per pixel. Defaults to SPP_RENDER.
-            unwarp (bool, optional): If True, unwarp the image to correct distortion. Defaults to False.
-            noise (float, optional): Gaussian noise standard deviation. Defaults to 0.0.
-            method (str, optional): Rendering method ('ray_tracing', etc.). Defaults to 'ray_tracing'.
-            show (bool, optional): If True, display the rendered image. Defaults to False.
-
-        Returns:
-            Tensor: Rendered image tensor with shape [1, 3, H, W].
-        """
-        # Change sensor resolution to match the image
-        sensor_res_original = self.sensor_res
-        if isinstance(img_org, np.ndarray):
-            img = torch.from_numpy(img_org).permute(2, 0, 1).unsqueeze(0).float() / 255.0
-        elif torch.is_tensor(img_org):
-            img = img_org.permute(2, 0, 1).unsqueeze(0).float()
-            if img.max() > 1.0:
-                img = img / 255.0
-        img = img.to(self.device)
-        self.set_sensor_res(sensor_res=img.shape[-2:])
-
-        # Image rendering
-        img_render = self.render(img, depth=depth, method=method, spp=spp)
-
-        # Add noise (a very simple Gaussian noise model)
-        if noise > 0:
-            img_render = img_render + torch.randn_like(img_render) * noise
-            img_render = torch.clamp(img_render, 0, 1)
-
-        # Compute PSNR and SSIM
-        img_np = img.squeeze(0).permute(1, 2, 0).cpu().numpy()
-        render_np = img_render.squeeze(0).permute(1, 2, 0).clamp(0, 1).cpu().detach().numpy()
-        render_psnr = round(peak_signal_noise_ratio(img_np, render_np, data_range=1.0), 3)
-        render_ssim = round(structural_similarity(img_np, render_np, channel_axis=2, data_range=1.0), 4)
-        print(f"Rendered image: PSNR={render_psnr:.3f}, SSIM={render_ssim:.4f}")
-
-        # Save image
-        if save_name is not None:
-            save_image(img_render, f"{save_name}.png")
-
-        # Unwarp to correct geometry distortion
-        if unwarp:
-            img_render = self.unwarp(img_render, depth)
-
-            # Compute PSNR and SSIM
-            render_np = img_render.squeeze(0).permute(1, 2, 0).clamp(0, 1).cpu().detach().numpy()
-            render_psnr = round(peak_signal_noise_ratio(img_np, render_np, data_range=1.0), 3)
-            render_ssim = round(structural_similarity(img_np, render_np, channel_axis=2, data_range=1.0), 4)
-            print(
-                f"Rendered image (unwarped): PSNR={render_psnr:.3f}, SSIM={render_ssim:.4f}"
-            )
-
-            if save_name is not None:
-                save_image(img_render, f"{save_name}_unwarped.png")
-
-        # Change the sensor resolution back
-        self.set_sensor_res(sensor_res=sensor_res_original)
-
-        # Show image
-        if show:
-            plt.imshow(img_render.cpu().squeeze(0).permute(1, 2, 0).numpy())
-            plt.title("Rendered image")
-            plt.axis("off")
-            plt.show()
-            plt.close()
-
-        return img_render
-
 
     # ====================================================================================
     # Geometrical optics calculation
