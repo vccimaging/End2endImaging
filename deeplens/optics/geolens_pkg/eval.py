@@ -123,8 +123,8 @@ class GeoLensEval:
 
             # Trace rays to sensor plane, shape [num_fov, num_rays, 3]
             ray = self.trace2sensor(ray)
-            ray_o = ray.o.clone().cpu().numpy()
-            ray_valid = ray.is_valid.clone().cpu().numpy()
+            ray_o = ray.o.cpu().numpy()
+            ray_valid = ray.is_valid.cpu().numpy()
 
             color = RGB_COLORS[wvln_idx % len(RGB_COLORS)]
 
@@ -187,8 +187,8 @@ class GeoLensEval:
             ray = self.trace2sensor(ray)
 
             # Convert to numpy, shape [num_grid, num_grid, num_rays, 3]
-            ray_o = -ray.o.clone().cpu().numpy()
-            ray_valid = ray.is_valid.clone().cpu().numpy()
+            ray_o = -ray.o.cpu().numpy()
+            ray_valid = ray.is_valid.cpu().numpy()
 
             color = RGB_COLORS[wvln_idx % len(RGB_COLORS)]
 
@@ -383,9 +383,7 @@ class GeoLensEval:
         )
 
         # Handle possible NaN values and convert to percentage
-        values = [
-            t.item() * 100 if not math.isnan(t.item()) else 0 for t in distortions
-        ]
+        values = np.nan_to_num(distortions * 100, nan=0.0).tolist()
 
         # Create figure
         fig, ax = plt.subplots(figsize=(8, 8))
@@ -1034,24 +1032,13 @@ class GeoLensEval:
         else:
             min_y = -y_distance - delta
             max_y = -y_distance + delta
-            o1_linspace = torch.stack(
-                [
-                    torch.linspace(min_y[i], max_y[i], num_rays)
-                    for i in range(len(min_y))
-                ],
-                dim=0,
-            )
+            t = torch.linspace(0, 1, num_rays, device=min_y.device)
+            o1_linspace = min_y.unsqueeze(-1) + t * (max_y - min_y).unsqueeze(-1)
 
             o1 = torch.zeros([len(rfovs), num_rays, 3])
             o1[:, :, 2] = depths[0]
 
-            o2_linspace = torch.stack(
-                [
-                    torch.linspace(-delta[i], delta[i], num_rays)
-                    for i in range(len(min_y))
-                ],
-                dim=0,
-            )
+            o2_linspace = -delta.unsqueeze(-1) + t * (2 * delta).unsqueeze(-1)
 
             o2 = torch.zeros([len(rfovs), num_rays, 3])
             o2[:, :, 2] = pupilz
