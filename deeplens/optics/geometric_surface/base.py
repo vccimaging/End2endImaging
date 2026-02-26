@@ -98,6 +98,8 @@ class Surface(DeepObj):
         self.newton_step_bound = self.r / 5  # [mm], maximum step size in each iteration
 
         self.tolerancing = False
+        self._R_tilt = None
+        self._R_tilt_inv = None
         self.device = device if device is not None else torch.device("cpu")
         self.to(self.device)
 
@@ -349,7 +351,7 @@ class Surface(DeepObj):
         """Transform ray to local coordinate system.
 
         When tolerancing is active, applies manufacturing error perturbations:
-        d_error (axial shift), decenter_error (lateral y-shift), and
+        d_error (axial shift), decenter_x/y_error (lateral shift), and
         tilt_error (rotation about the x-axis).
 
         Args:
@@ -360,19 +362,18 @@ class Surface(DeepObj):
         """
         # Shift ray origin to surface origin (with tolerance perturbations)
         if self.tolerancing:
-            ray.o[..., 0] = ray.o[..., 0] - self.pos_x
-            ray.o[..., 1] = ray.o[..., 1] - self.pos_y - self.decenter_error
+            ray.o[..., 0] = ray.o[..., 0] - self.pos_x - self.decenter_x_error
+            ray.o[..., 1] = ray.o[..., 1] - self.pos_y - self.decenter_y_error
             ray.o[..., 2] = ray.o[..., 2] - self.d - self.d_error
         else:
             ray.o[..., 0] = ray.o[..., 0] - self.pos_x
             ray.o[..., 1] = ray.o[..., 1] - self.pos_y
             ray.o[..., 2] = ray.o[..., 2] - self.d
 
-        # Apply tilt rotation (tolerance-induced, about the x-axis)
-        if self.tolerancing and abs(self.tilt_error) > 1e-12:
-            R_tilt = self._tilt_rotation_matrix(self.tilt_error)
-            ray.o = self._apply_rotation(ray.o, R_tilt)
-            ray.d = self._apply_rotation(ray.d, R_tilt)
+        # Apply tilt rotation (tolerance-induced, using cached matrix)
+        if self._R_tilt is not None:
+            ray.o = self._apply_rotation(ray.o, self._R_tilt)
+            ray.d = self._apply_rotation(ray.d, self._R_tilt)
             ray.d = F.normalize(ray.d, p=2, dim=-1)
 
         # Rotate ray origin and direction (using cached matrix for nominal orientation)
@@ -401,17 +402,16 @@ class Surface(DeepObj):
             ray.d = self._apply_rotation(ray.d, self._R_to_global)
             ray.d = F.normalize(ray.d, p=2, dim=-1)
 
-        # Reverse tilt rotation (tolerance-induced)
-        if self.tolerancing and abs(self.tilt_error) > 1e-12:
-            R_tilt_inv = self._tilt_rotation_matrix(-self.tilt_error)
-            ray.o = self._apply_rotation(ray.o, R_tilt_inv)
-            ray.d = self._apply_rotation(ray.d, R_tilt_inv)
+        # Reverse tilt rotation (tolerance-induced, using cached inverse matrix)
+        if self._R_tilt_inv is not None:
+            ray.o = self._apply_rotation(ray.o, self._R_tilt_inv)
+            ray.d = self._apply_rotation(ray.d, self._R_tilt_inv)
             ray.d = F.normalize(ray.d, p=2, dim=-1)
 
         # Shift ray origin back to global coordinates (with tolerance perturbations)
         if self.tolerancing:
-            ray.o[..., 0] = ray.o[..., 0] + self.pos_x
-            ray.o[..., 1] = ray.o[..., 1] + self.pos_y + self.decenter_error
+            ray.o[..., 0] = ray.o[..., 0] + self.pos_x + self.decenter_x_error
+            ray.o[..., 1] = ray.o[..., 1] + self.pos_y + self.decenter_y_error
             ray.o[..., 2] = ray.o[..., 2] + self.d + self.d_error
         else:
             ray.o[..., 0] = ray.o[..., 0] + self.pos_x
@@ -497,14 +497,13 @@ class Surface(DeepObj):
         # Reshape back to original shape
         return rotated_flat.view(original_shape)
 
-    def _tilt_rotation_matrix(self, angle):
+    @staticmethod
+    def _tilt_rotation_matrix(angle, device="cpu"):
         """Rotation matrix for surface tilt about the x-axis.
-
-        Used to transform rays into/out of a tilted surface frame during
-        tolerance analysis.
 
         Args:
             angle (float): Tilt angle in radians.
+            device: Torch device.
 
         Returns:
             torch.Tensor: 3x3 rotation matrix.
@@ -514,7 +513,7 @@ class Surface(DeepObj):
         return torch.tensor(
             [[1, 0, 0], [0, cos_a, sin_a], [0, -sin_a, cos_a]],
             dtype=torch.get_default_dtype(),
-            device=self.device,
+            device=device,
         )
 
     # =====================================================================
@@ -713,7 +712,7 @@ class Surface(DeepObj):
                     {
                         "r_tole": 0.05,          # aperture radius [mm]
                         "d_tole": 0.05,          # axial position [mm]
-                        "decenter_tole": 0.1,    # lateral decentre [mm]
+                        "decenter_tole": 0.1,    # lateral decentre x & y [mm]
                         "tilt_tole": 0.1,        # tilt [arcmin]
                         "mat2_n_tole": 0.001,    # refractive index
                     }
@@ -736,9 +735,13 @@ class Surface(DeepObj):
         # Initialize error values to zero (set to random values by sample_tolerance)
         self.r_error = 0.0
         self.d_error = 0.0
-        self.decenter_error = 0.0
+        self.decenter_x_error = 0.0
+        self.decenter_y_error = 0.0
         self.tilt_error = 0.0
         self.mat2_n_error = 0.0
+        # Cached tilt rotation matrices (populated by sample_tolerance)
+        self._R_tilt = None
+        self._R_tilt_inv = None
 
     @torch.no_grad()
     def sample_tolerance(self):
@@ -747,25 +750,38 @@ class Surface(DeepObj):
         Error distributions:
             - r_error: Uniform[-r_tole, 0] (aperture only shrinks).
             - d_error: Normal(0, d_tole) axial position shift [mm].
-            - decenter_error: Normal(0, decenter_tole) lateral y-shift [mm].
+            - decenter_x/y_error: Normal(0, decenter_tole) lateral shift [mm].
             - tilt_error: Normal(0, tilt_tole) tilt about x-axis [arcmin → rad].
             - mat2_n_error: Normal(0, mat2_n_tole) refractive index offset.
         """
         self.r_error = float(np.random.uniform(-self.r_tole, 0))  # [mm]
         self.d_error = float(np.random.randn() * self.d_tole)  # [mm]
-        self.decenter_error = float(np.random.randn() * self.decenter_tole)  # [mm]
+        self.decenter_x_error = float(np.random.randn() * self.decenter_tole)  # [mm]
+        self.decenter_y_error = float(np.random.randn() * self.decenter_tole)  # [mm]
         tilt_arcmin = float(np.random.randn() * self.tilt_tole)  # [arcmin]
         self.tilt_error = tilt_arcmin / 60.0 * np.pi / 180.0  # [rad]
         self.mat2_n_error = float(np.random.randn() * self.mat2_n_tole)
+
+        # Cache tilt rotation matrices to avoid per-call tensor allocation
+        if abs(self.tilt_error) > 1e-12:
+            self._R_tilt = self._tilt_rotation_matrix(self.tilt_error, self.device)
+            self._R_tilt_inv = self._tilt_rotation_matrix(-self.tilt_error, self.device)
+        else:
+            self._R_tilt = None
+            self._R_tilt_inv = None
+
         self.tolerancing = True
 
     def zero_tolerance(self):
         """Reset all manufacturing errors to zero (nominal state)."""
         self.r_error = 0.0
         self.d_error = 0.0
-        self.decenter_error = 0.0
+        self.decenter_x_error = 0.0
+        self.decenter_y_error = 0.0
         self.tilt_error = 0.0
         self.mat2_n_error = 0.0
+        self._R_tilt = None
+        self._R_tilt_inv = None
         self.tolerancing = False
 
     def sensitivity_score(self):

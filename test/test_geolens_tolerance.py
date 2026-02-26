@@ -64,7 +64,7 @@ class TestToleranceSampling:
         for s in lens.surfaces:
             if hasattr(s, "d_error") and s.d_error != 0.0:
                 any_nonzero = True
-            if hasattr(s, "decenter_error") and s.decenter_error != 0.0:
+            if hasattr(s, "decenter_x_error") and s.decenter_x_error != 0.0:
                 any_nonzero = True
             if hasattr(s, "tilt_error") and s.tilt_error != 0.0:
                 any_nonzero = True
@@ -81,7 +81,8 @@ class TestToleranceSampling:
         for s in lens.surfaces:
             if hasattr(s, "d_error"):
                 assert s.d_error == 0.0
-                assert s.decenter_error == 0.0
+                assert s.decenter_x_error == 0.0
+                assert s.decenter_y_error == 0.0
                 assert s.tilt_error == 0.0
                 assert s.mat2_n_error == 0.0
                 assert s.r_error == 0.0
@@ -133,7 +134,8 @@ class TestToleranceRayTracingEffect:
 
         # Apply large decenter to all surfaces
         for s in lens.surfaces:
-            s.decenter_error = 0.5  # 0.5 mm lateral shift
+            s.decenter_x_error = 0.3  # 0.3 mm x-shift
+            s.decenter_y_error = 0.4  # 0.4 mm y-shift
             s.tolerancing = True
 
         with torch.no_grad():
