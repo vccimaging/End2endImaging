@@ -903,7 +903,9 @@ class GeoLensOptim:
         * **No existing aspheres** → nearest to aperture stop (maximises
           spherical aberration correction, analogous to Schmidt corrector).
         * **Asphere(s) already near stop** → farthest from stop (corrects
-          field-dependent aberrations).
+          field-dependent aberrations), but **excluding outermost surfaces**
+          (first/last refractive surfaces are typically large protective
+          elements that are impractical and expensive to aspherize).
         * Ties broken by larger semi-diameter (proxy for marginal ray height).
         * Only air-glass interfaces are considered (cemented surfaces excluded).
 
@@ -923,6 +925,19 @@ class GeoLensOptim:
         else:
             # No explicit aperture; approximate with system midpoint
             aper_z = (self.surfaces[0].d.item() + self.surfaces[-1].d.item()) / 2.0
+
+        # Identify outermost refractive surface indices (first and last
+        # non-Aperture surfaces).  These are excluded from subsequent
+        # asphere selection because they are typically large protective
+        # elements in camera lens designs.
+        first_refractive = None
+        last_refractive = None
+        for i, surf in enumerate(self.surfaces):
+            if not isinstance(surf, Aperture):
+                if first_refractive is None:
+                    first_refractive = i
+                last_refractive = i
+        outermost = {first_refractive, last_refractive}
 
         # Collect candidates: Spheric surfaces at air-glass boundaries
         candidates = []
@@ -949,7 +964,18 @@ class GeoLensOptim:
             # First asphere → nearest to stop, break ties by larger radius
             candidates.sort(key=lambda x: (x[1], -x[2]))
         else:
-            # Subsequent → farthest from stop, break ties by larger radius
+            # Subsequent → farthest from stop, but exclude outermost surfaces
+            # (front/back elements are impractical asphere candidates in
+            # camera lens design).  Fall back to full list only if excluding
+            # outermost surfaces leaves no candidates.
+            inner = [c for c in candidates if c[0] not in outermost]
+            if inner:
+                candidates = inner
+            else:
+                logging.warning(
+                    "All remaining candidates are outermost surfaces; "
+                    "falling back to full candidate list."
+                )
             candidates.sort(key=lambda x: (-x[1], -x[2]))
 
         best_idx = candidates[0][0]

@@ -165,6 +165,43 @@ def test_increase_auto_select():
     print("\n  [PASS] Auto-selection picks best candidate.")
 
 
+def test_outermost_surface_excluded():
+    """Test that 2nd asphere auto-selection excludes outermost surfaces."""
+    print("\n" + "#"*60)
+    print("# TEST 5b: outermost surface exclusion")
+    print("#"*60)
+
+    lens = GeoLens(filename="./datasets/lenses/cooke.json")
+    lens.calc_pupil()
+    print_surfaces(lens, "All-spherical Cooke triplet")
+
+    # Identify outermost refractive surfaces
+    first_refractive = None
+    last_refractive = None
+    for i, surf in enumerate(lens.surfaces):
+        if not isinstance(surf, Aperture):
+            if first_refractive is None:
+                first_refractive = i
+            last_refractive = i
+    print(f"\n  Outermost refractive surfaces: {first_refractive}, {last_refractive}")
+
+    # Add first asphere (near stop)
+    idx1 = lens.add_aspheric()
+    print(f"  1st asphere auto-selected: surface {idx1}")
+
+    # Add second asphere (away from stop, should exclude outermost)
+    idx2 = lens.add_aspheric()
+    print(f"  2nd asphere auto-selected: surface {idx2}")
+
+    assert idx2 != first_refractive, (
+        f"2nd asphere should NOT be first refractive surface {first_refractive}, got {idx2}"
+    )
+    assert idx2 != last_refractive, (
+        f"2nd asphere should NOT be last refractive surface {last_refractive}, got {idx2}"
+    )
+    print(f"\n  [PASS] 2nd asphere ({idx2}) correctly avoids outermost surfaces ({first_refractive}, {last_refractive}).")
+
+
 def test_ray_tracing_still_works():
     """Test that converted lens still traces rays correctly."""
     print("\n" + "#"*60)
@@ -226,6 +263,7 @@ if __name__ == "__main__":
     test_add_aspheric_error()
     test_increase_aspheric_order()
     test_increase_auto_select()
+    test_outermost_surface_excluded()
     test_ray_tracing_still_works()
     test_increase_order_error()
 
