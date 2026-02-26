@@ -6,6 +6,11 @@
 
 """Aspheric surface with normalized coefficients for stable optimization.
 
+The ``ai`` coefficient list starts from the 4th-order term (a4) by default,
+because the 2nd-order term (a2) is redundant with base curvature ``c`` and
+should not be optimised.  Legacy JSON files that include a2 are handled
+transparently via the ``use_ai2`` flag in ``init_from_dict``.
+
 Reference:
     [1] https://en.wikipedia.org/wiki/Aspheric_lens.
 
@@ -57,13 +62,17 @@ class AsphericNorm(Surface):
         self.k = torch.tensor(k)
 
         self.norm_r = r if r > 2.0 else 2.0
-        self.ai = torch.tensor(ai)
-        self.ai_degree = len(ai)
-        # Create normalized coefficients for optimization and sag calculation
-        for i, a in enumerate(ai):
-            p_name = f"norm_ai{2 * (i + 1)}"
-            norm_coeff = torch.tensor(a * self.norm_r ** (2 * (i + 1)))
-            setattr(self, p_name, norm_coeff)
+        if ai is not None and len(ai) > 0:
+            self.ai = torch.tensor(ai)
+            self.ai_degree = len(ai)
+            # ai[0] -> a4 (norm_ai4), ai[1] -> a6 (norm_ai6), ...
+            for i, a in enumerate(ai):
+                p_name = f"norm_ai{2 * (i + 2)}"
+                norm_coeff = torch.tensor(a * self.norm_r ** (2 * (i + 2)))
+                setattr(self, p_name, norm_coeff)
+        else:
+            self.ai = None
+            self.ai_degree = 0
 
         self.tolerancing = False
         self.to(device)
@@ -71,16 +80,25 @@ class AsphericNorm(Surface):
     @classmethod
     def init_from_dict(cls, surf_dict):
         if "roc" in surf_dict:
-            c = 1 / surf_dict["roc"]
+            if surf_dict["roc"] != 0:
+                c = 1 / surf_dict["roc"]
+            else:
+                c = 0.0
         else:
             c = surf_dict["c"]
+
+        ai = surf_dict.get("ai", [])
+
+        # Backward compatibility: old format includes a2 as first element
+        if surf_dict.get("use_ai2", True) and len(ai) > 0:
+            ai = ai[1:]  # Strip the a2 coefficient
 
         return cls(
             r=surf_dict["r"],
             d=surf_dict["d"],
             c=c,
             k=surf_dict["k"],
-            ai=surf_dict["ai"],
+            ai=ai,
             mat2=surf_dict["mat2"],
         )
 
@@ -98,14 +116,14 @@ class AsphericNorm(Surface):
         r2 = x**2 + y**2
         total_surface = r2 * c / (1 + torch.sqrt(1 - (1 + k) * r2 * c**2 + EPSILON))
 
-        # rho2 = r2 / self.norm_r**2
-        # sag_aspheric = sum(norm_ai_{2i} * rho2**i) = sum(norm_ai_{2i} * (r2/self.norm_r**2)**i)
-        # = sum (ai_{2i} * self.norm_r**(2i)) * (r2**i / self.norm_r**(2i)) = sum(ai_{2i} * r2**i)
-
+        # Aspheric polynomial: norm_ai4*rho2² + norm_ai6*rho2³ + ...
+        # where rho2 = r2/norm_r², so rho2^(i+2) maps to r^{2(i+2)}
         rho2 = r2 / (self.norm_r**2)
-        for i in range(1, self.ai_degree + 1):
-            norm_ai = getattr(self, f"norm_ai{2 * i}")
-            total_surface += norm_ai * rho2**i
+        rho_pow = rho2 * rho2  # starts at rho2² (= r⁴)
+        for i in range(self.ai_degree):
+            norm_ai = getattr(self, f"norm_ai{2 * (i + 2)}")
+            total_surface += norm_ai * rho_pow
+            rho_pow = rho_pow * rho2
 
         return total_surface
 
@@ -124,13 +142,15 @@ class AsphericNorm(Surface):
         sf = torch.sqrt(1 - (1 + k) * r2 * c**2 + EPSILON)
         dsdr2 = (1 + sf + (1 + k) * r2 * c**2 / 2 / sf) * c / (1 + sf) ** 2
 
-        if self.ai_degree > 0:
-            # d(sag_aspheric)/dr2 = d/dr2(sum(norm_ai_{2i} * (r2/self.norm_r**2)**i))
-            # = sum(norm_ai_{2i} * i * (r2/self.norm_r**2)**(i-1) * (1/self.norm_r**2))
-            # = sum(norm_ai_{2i} * i * r2**(i-1) / self.norm_r**(2i))
-            for i in range(1, self.ai_degree + 1):
-                norm_ai = getattr(self, f"norm_ai{2 * i}")
-                dsdr2 += i * norm_ai * r2 ** (i - 1) / (self.norm_r ** (2 * i))
+        # Derivative of aspheric polynomial w.r.t. r²:
+        # d/dr²(norm_ai_{2j} * rho2^j) = j * norm_ai_{2j} * r2^(j-1) / norm_r^(2j)
+        # where j = i+2 (starts at 2 for a4 term)
+        r_pow = r2  # r2^(j-1) starts at r2^1 for j=2
+        for i in range(self.ai_degree):
+            order = i + 2  # 2, 3, 4, ...
+            norm_ai = getattr(self, f"norm_ai{2 * order}")
+            dsdr2 += order * norm_ai * r_pow / (self.norm_r ** (2 * order))
+            r_pow = r_pow * r2
 
         return dsdr2 * 2 * x, dsdr2 * 2 * y
 
@@ -203,8 +223,8 @@ class AsphericNorm(Surface):
         # Optimize aspheric coefficients
         if self.ai is not None:
             if self.ai_degree > 0:
-                for i in range(1, self.ai_degree + 1):
-                    p_name = f"norm_ai{2 * i}"
+                for i in range(self.ai_degree):
+                    p_name = f"norm_ai{2 * (i + 2)}"
                     p = getattr(self, p_name)
                     p.requires_grad_(True)
                     params.append({"params": [p], "lr": lrs[param_idx]})
@@ -226,9 +246,10 @@ class AsphericNorm(Surface):
         # Update normalized ai
         norm_r_old = self.norm_r
         norm_r_new = r_new if r_new > 2.0 else 2.0
-        for i in range(1, self.ai_degree + 1):
-            norm_ai = getattr(self, f"norm_ai{2 * i}")
-            norm_ai.data = norm_ai.data * (norm_r_new / norm_r_old) ** (2 * i)
+        for i in range(self.ai_degree):
+            order = i + 2
+            norm_ai = getattr(self, f"norm_ai{2 * order}")
+            norm_ai.data = norm_ai.data * (norm_r_new / norm_r_old) ** (2 * order)
 
         # Update radius
         self.r = r_new
@@ -282,10 +303,11 @@ class AsphericNorm(Surface):
     # IO
     # =======================================
     def construct_ai(self):
-        for i in range(1, self.ai_degree + 1):
-            p_name = f"norm_ai{2 * i}"
+        for i in range(self.ai_degree):
+            order = i + 2
+            p_name = f"norm_ai{2 * order}"
             norm_ai = getattr(self, p_name)
-            setattr(self, f"ai{2 * i}", norm_ai / (self.norm_r ** (2 * i)))
+            setattr(self, f"ai{2 * order}", norm_ai / (self.norm_r ** (2 * order)))
 
     def surf_dict(self):
         """Return a dict of surface."""
@@ -297,15 +319,16 @@ class AsphericNorm(Surface):
             "d": round(self.d.item(), 4),
             "k": round(self.k.item(), 4),
             "ai": [],
+            "use_ai2": False,
             "mat2": self.mat2.get_name(),
         }
-        if self.ai_degree > 0:
-            for i in range(1, self.ai_degree + 1):
-                p_name = f"norm_ai{2 * i}"
-                norm_ai = getattr(self, p_name)
-                abs_ai = norm_ai.item() / (self.norm_r ** (2 * i))
-                surf_dict[f"(ai{2 * i})"] = float(format(abs_ai, ".6e"))
-                surf_dict["ai"].append(float(format(abs_ai, ".6e")))
+        for i in range(self.ai_degree):
+            order = i + 2
+            p_name = f"norm_ai{2 * order}"
+            norm_ai = getattr(self, p_name)
+            abs_ai = norm_ai.item() / (self.norm_r ** (2 * order))
+            surf_dict[f"(ai{2 * order})"] = float(format(abs_ai, ".6e"))
+            surf_dict["ai"].append(float(format(abs_ai, ".6e")))
 
         return surf_dict
 
@@ -318,12 +341,12 @@ class AsphericNorm(Surface):
             "Spheric surface is re-implemented in Spheric class."
         )
 
-        # Get absolute ai values for Zemax file
-        abs_ai = []
-        if self.ai_degree > 0:
-            for i in range(1, self.ai_degree + 1):
-                norm_ai = getattr(self, f"norm_ai{2 * i}")
-                abs_ai.append(norm_ai.item() / (self.norm_r ** (2 * i)))
+        # Collect absolute ai values, PARM 1 = a2 (always 0), PARM 2+ = a4, a6, ...
+        abs_ai = [0.0]  # a2 = 0 for Zemax PARM 1
+        for i in range(self.ai_degree):
+            order = i + 2
+            norm_ai = getattr(self, f"norm_ai{2 * order}")
+            abs_ai.append(norm_ai.item() / (self.norm_r ** (2 * order)))
 
         # Pad with zeros if necessary for Zemax PARM format
         while len(abs_ai) < 6:

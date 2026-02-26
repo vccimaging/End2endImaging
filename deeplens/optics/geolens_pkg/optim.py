@@ -1023,8 +1023,8 @@ class GeoLensOptim:
         """Add higher-order polynomial terms to existing Aspheric surfaces.
 
         Appends ``increment`` additional even-order coefficients (initialised
-        to zero). For example, degree 4 ``[a2, a4, a6, a8]`` becomes degree 5
-        ``[a2, a4, a6, a8, a10]`` after ``increment=1``.
+        to zero). For example, degree 4 ``[a4, a6, a8, a10]`` becomes degree 5
+        ``[a4, a6, a8, a10, a12]`` after ``increment=1``.
 
         Follows the principle of *start low, add incrementally*: increase
         order only when residual higher-order aberrations persist after
@@ -1083,8 +1083,9 @@ class GeoLensOptim:
     def _increase_surface_order(self, surf, increment=1):
         """Append zero-initialised higher-order coefficients to a surface.
 
-        Updates ``ai_degree``, individual ``ai{2*i}`` attributes, and the
-        ``ai`` tensor consistently.
+        Updates ``ai_degree``, individual ``ai{2*(j+2)}`` attributes, and the
+        ``ai`` tensor consistently.  The ai list starts from the 4th-order
+        term (a4): ``[a4, a6, a8, ...]``.
 
         Args:
             surf (Aspheric or AsphericNorm): Surface to modify.
@@ -1095,12 +1096,12 @@ class GeoLensOptim:
         device = surf.d.device
 
         # Add new zero-initialised coefficient attributes
-        for i in range(old_degree + 1, new_degree + 1):
-            setattr(surf, f"ai{2 * i}", torch.tensor(0.0, device=device))
+        for j in range(old_degree, new_degree):
+            setattr(surf, f"ai{2 * (j + 2)}", torch.tensor(0.0, device=device))
 
         # Rebuild the full ai tensor and update degree
         ai_list = []
-        for i in range(1, new_degree + 1):
-            ai_list.append(getattr(surf, f"ai{2 * i}").item())
+        for j in range(new_degree):
+            ai_list.append(getattr(surf, f"ai{2 * (j + 2)}").item())
         surf.ai = torch.tensor(ai_list, device=device)
         surf.ai_degree = new_degree

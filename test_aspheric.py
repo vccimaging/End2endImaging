@@ -38,8 +38,8 @@ def test_add_aspheric_explicit():
     assert isinstance(lens.surfaces[0], Aspheric), "Surface 0 should be Aspheric"
     assert lens.surfaces[0].ai_degree == 4, "ai_degree should be 4"
     assert lens.surfaces[0].k.item() == 0.0, "k should be 0.0"
-    assert lens.surfaces[0].ai2.item() == 0.0, "ai2 should be 0.0"
     assert lens.surfaces[0].ai4.item() == 0.0, "ai4 should be 0.0"
+    assert lens.surfaces[0].ai6.item() == 0.0, "ai6 should be 0.0"
     # Verify sag is preserved (c should match original)
     assert abs(lens.surfaces[0].c.item() - 0.0454) < 1e-3, "Curvature should be preserved"
     print("\n  [PASS] All assertions passed.")
@@ -114,24 +114,24 @@ def test_increase_aspheric_order():
     # First add an aspheric surface
     idx = lens.add_aspheric(surf_idx=0, ai_degree=4)
     surf = lens.surfaces[idx]
-    print(f"\n  Initial: ai_degree={surf.ai_degree}, attrs: ai2..ai8")
+    print(f"\n  Initial: ai_degree={surf.ai_degree}, attrs: ai4..ai10")
     assert surf.ai_degree == 4
 
-    # Increase by 1: should add ai10
+    # Increase by 1: should add ai12
     lens.increase_aspheric_order(surf_idx=idx, increment=1)
     surf = lens.surfaces[idx]
-    print(f"  After +1: ai_degree={surf.ai_degree}, has ai10={surf.ai10.item()}")
+    print(f"  After +1: ai_degree={surf.ai_degree}, has ai12={surf.ai12.item()}")
     assert surf.ai_degree == 5
-    assert hasattr(surf, "ai10")
-    assert surf.ai10.item() == 0.0
+    assert hasattr(surf, "ai12")
+    assert surf.ai12.item() == 0.0
 
-    # Increase by 2 more: should add ai12, ai14
+    # Increase by 2 more: should add ai14, ai16
     lens.increase_aspheric_order(surf_idx=idx, increment=2)
     surf = lens.surfaces[idx]
-    print(f"  After +2: ai_degree={surf.ai_degree}, has ai12={surf.ai12.item()}, ai14={surf.ai14.item()}")
+    print(f"  After +2: ai_degree={surf.ai_degree}, has ai14={surf.ai14.item()}, ai16={surf.ai16.item()}")
     assert surf.ai_degree == 7
-    assert hasattr(surf, "ai12")
     assert hasattr(surf, "ai14")
+    assert hasattr(surf, "ai16")
     assert surf.ai_degree == len(surf.ai)
     print("\n  [PASS] All order increases verified.")
 
@@ -155,7 +155,7 @@ def test_increase_all_aspheric():
     for idx in updated:
         surf = lens.surfaces[idx]
         assert surf.ai_degree == 6, f"Surface {idx} should have degree 6, got {surf.ai_degree}"
-        assert hasattr(surf, "ai12"), f"Surface {idx} should have ai12"
+        assert hasattr(surf, "ai14"), f"Surface {idx} should have ai14"
     print_surfaces(lens, "After increasing all by 2")
     print("\n  [PASS] All surfaces increased to degree 6.")
 
