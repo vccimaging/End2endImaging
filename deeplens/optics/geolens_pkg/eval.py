@@ -123,8 +123,8 @@ class GeoLensEval:
 
             # Trace rays to sensor plane, shape [num_fov, num_rays, 3]
             ray = self.trace2sensor(ray)
-            ray_o = ray.o.clone().cpu().numpy()
-            ray_valid = ray.is_valid.clone().cpu().numpy()
+            ray_o = ray.o.cpu().numpy()
+            ray_valid = ray.is_valid.cpu().numpy()
 
             color = RGB_COLORS[wvln_idx % len(RGB_COLORS)]
 
@@ -187,8 +187,8 @@ class GeoLensEval:
             ray = self.trace2sensor(ray)
 
             # Convert to numpy, shape [num_grid, num_grid, num_rays, 3]
-            ray_o = -ray.o.clone().cpu().numpy()
-            ray_valid = ray.is_valid.clone().cpu().numpy()
+            ray_o = -ray.o.cpu().numpy()
+            ray_valid = ray.is_valid.cpu().numpy()
 
             color = RGB_COLORS[wvln_idx % len(RGB_COLORS)]
 
@@ -317,9 +317,10 @@ class GeoLensEval:
         Returns:
             distortion (float): distortion at the specific field angle
         """
-        # Calculate ideal image height
-        eff_foclen = self.foclen
-        ideal_imgh = eff_foclen * np.tan(rfov * np.pi / 180)
+        # Calculate ideal image height (ensure pure numpy to avoid tensor deprecation)
+        eff_foclen = float(self.foclen)
+        rfov_np = np.asarray(rfov) if not isinstance(rfov, (int, float)) else rfov
+        ideal_imgh = eff_foclen * np.tan(rfov_np * np.pi / 180)
 
         # Calculate chief ray
         chief_ray_o, chief_ray_d = self.calc_chief_ray_infinite(
@@ -340,12 +341,11 @@ class GeoLensEval:
 
         # Calculate distortion
         actual_imgh = actual_imgh.cpu().numpy()
-        ideal_imgh = ideal_imgh.cpu().numpy()
-        distortion = (actual_imgh - ideal_imgh) / ideal_imgh
 
         # Handle the case where ideal_imgh is 0 or very close to 0
-        mask = abs(ideal_imgh) < EPSILON
-        distortion[mask] = 0.0
+        ideal_imgh = np.asarray(ideal_imgh)
+        mask = np.abs(ideal_imgh) < EPSILON
+        distortion = np.where(mask, 0.0, (actual_imgh - ideal_imgh) / np.where(mask, 1.0, ideal_imgh))
 
         return distortion
 
@@ -383,9 +383,7 @@ class GeoLensEval:
         )
 
         # Handle possible NaN values and convert to percentage
-        values = [
-            t.item() * 100 if not math.isnan(t.item()) else 0 for t in distortions
-        ]
+        values = np.nan_to_num(distortions * 100, nan=0.0).tolist()
 
         # Create figure
         fig, ax = plt.subplots(figsize=(8, 8))
@@ -865,8 +863,8 @@ class GeoLensEval:
         vignetting = 0.5 + 0.5 * vignetting
 
         fig, ax = plt.subplots()
-        ax.imshow(vignetting.cpu().numpy(), cmap="gray", vmin=0.5, vmax=1.0)
-        ax.colorbar(ticks=[0.5, 0.75, 1.0])
+        im = ax.imshow(vignetting.cpu().numpy(), cmap="gray", vmin=0.5, vmax=1.0)
+        fig.colorbar(im, ax=ax, ticks=[0.5, 0.75, 1.0])
 
         if show:
             plt.show()
@@ -981,9 +979,13 @@ class GeoLensEval:
             if len(rfov) == 1:
                 return chief_ray_o, chief_ray_d
 
-        if len(rfov) > 1:
+        # Extract non-zero rfov entries for processing
+        if torch.any(rfov == 0):
             rfovs = rfov[1:]
             depths = depth[1:]
+        else:
+            rfovs = rfov
+            depths = depth
 
         if self.aper_idx == 0:
             if plane == "sagittal":
@@ -1034,24 +1036,13 @@ class GeoLensEval:
         else:
             min_y = -y_distance - delta
             max_y = -y_distance + delta
-            o1_linspace = torch.stack(
-                [
-                    torch.linspace(min_y[i], max_y[i], num_rays)
-                    for i in range(len(min_y))
-                ],
-                dim=0,
-            )
+            t = torch.linspace(0, 1, num_rays, device=min_y.device)
+            o1_linspace = min_y.unsqueeze(-1) + t * (max_y - min_y).unsqueeze(-1)
 
             o1 = torch.zeros([len(rfovs), num_rays, 3])
             o1[:, :, 2] = depths[0]
 
-            o2_linspace = torch.stack(
-                [
-                    torch.linspace(-delta[i], delta[i], num_rays)
-                    for i in range(len(min_y))
-                ],
-                dim=0,
-            )
+            o2_linspace = -delta.unsqueeze(-1) + t * (2 * delta).unsqueeze(-1)
 
             o2 = torch.zeros([len(rfovs), num_rays, 3])
             o2[:, :, 2] = pupilz

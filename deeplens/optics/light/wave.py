@@ -109,6 +109,10 @@ class ComplexWave(DeepObj):
         self.x, self.y = self.gen_xy_grid()  # x, y grid
         self.z = torch.full_like(self.x, z)  # z grid
 
+        # Cache propagation method boundaries (depend only on wvln, ps, phy_size)
+        self._asm_zmax = Nyquist_ASM_zmax(wvln=self.wvln, ps=self.ps, side_length=self.phy_size[0])
+        self._fresnel_zmin = Fresnel_zmin(wvln=self.wvln, ps=self.ps, side_length=self.phy_size[0])
+
     @classmethod
     def point_wave(
         cls,
@@ -241,30 +245,28 @@ class ComplexWave(DeepObj):
         Returns:
             self: propagated complex wave field.
         """
-        # Determine propagation method and perform propagation
+        # Determine propagation method using cached boundaries
         wvln_mm = self.wvln * 1e-3  # [um] to [mm]
-        asm_zmax = Nyquist_ASM_zmax(wvln=self.wvln, ps=self.ps, side_length=self.phy_size[0])
-        fresnel_zmin = Fresnel_zmin(wvln=self.wvln, ps=self.ps, side_length=self.phy_size[0])
-        
+
         # Wave propagation methods
         if prop_dist < DELTA:
             # Zero distance: do nothing
             pass
-        
+
         elif prop_dist < wvln_mm:
             # Sub-wavelength distance: full wave method (e.g., FDTD)
             raise Exception(
                 "The propagation distance in sub-wavelength range is not implemented yet. Have to use full wave method (e.g., FDTD)."
             )
-        
-        elif prop_dist < asm_zmax:
+
+        elif prop_dist < self._asm_zmax:
             # Angular Spectrum Method (ASM)
             self.u = AngularSpectrumMethod(self.u, z=prop_dist, wvln=self.wvln, ps=self.ps, n=n)
-        
-        elif prop_dist > fresnel_zmin:
+
+        elif prop_dist > self._fresnel_zmin:
             # Fresnel diffraction
             self.u = FresnelDiffraction(self.u, z=prop_dist, wvln=self.wvln, ps=self.ps, n=n)
-        
+
         else:
             raise Exception(f"Propagation method not implemented for distance {prop_dist} mm.")
         
@@ -278,7 +280,9 @@ class ComplexWave(DeepObj):
         Args:
             z (float): destination plane z coordinate.
         """
-        prop_dist = z - self.z[0, 0].item()
+        # Use float() instead of .item() to avoid GPU-CPU sync on CUDA tensors
+        # (self.z is a full grid but all values are identical; [0,0] is representative)
+        prop_dist = float(z) - float(self.z[0, 0])
         self.prop(prop_dist, n=n)
         return self
 
@@ -441,7 +445,7 @@ class ComplexWave(DeepObj):
             self.phy_size[1] * self.res[1] / Worg,
         ]
         self.x, self.y = self.gen_xy_grid()
-        self.z = torch.full_like(self.x, self.z[0, 0].item())
+        self.z = torch.full_like(self.x, float(self.z[0, 0]))
 
     def flip(self):
         """Flip the field horizontally and vertically."""
@@ -494,11 +498,12 @@ def AngularSpectrumMethod(u, z, wvln, ps, n=1.0, padding=True):
         Wimg, Himg = Worg, Horg
 
     # Propagation with angular spectrum method
+    # Compute fx²+fy² via outer sum of 1D arrays (avoids meshgrid allocation)
     fx_1d = torch.fft.fftfreq(Wimg, d=ps, device=u.device)
     fy_1d = torch.fft.fftfreq(Himg, d=ps, device=u.device)
-    fx, fy = torch.meshgrid(fx_1d, fy_1d, indexing="xy")
-    square_root = torch.sqrt(1 - wvln_mm**2 * (fx**2 + fy**2))
-    
+    f2 = fx_1d.unsqueeze(0) ** 2 + fy_1d.unsqueeze(1) ** 2
+    square_root = torch.sqrt(1 - wvln_mm**2 * f2)
+
     # H is defined on the unshifted frequency grid to match fft2(u)
     H = torch.exp(1j * k * z * square_root)
 
@@ -557,29 +562,25 @@ def FresnelDiffraction(u, z, wvln, ps, n=1.0, padding=True, TF=None):
     wvln_mm = wvln / n * 1e-3  # [um] to [mm]
     k = 2 * torch.pi / wvln_mm
 
-    # Compute x, y, fx, fy
-    x, y = torch.meshgrid(
-        torch.linspace(-0.5 * Wimg * ps, 0.5 * Himg * ps, Wimg, device=u.device),
-        torch.linspace(0.5 * Wimg * ps, -0.5 * Himg * ps, Himg, device=u.device),
-        indexing="xy",
-    )
-    fx, fy = torch.meshgrid(
-        torch.linspace(-0.5 / ps, 0.5 / ps, Wimg, device=u.device),
-        torch.linspace(0.5 / ps, -0.5 / ps, Himg, device=u.device),
-        indexing="xy",
-    )
-
     # TF or IR method
     if TF is None:
-        if ps > wvln_mm * np.abs(z) / (Wimg * ps):
+        if ps > wvln_mm * abs(z) / (Wimg * ps):
             TF = True
         else:
             TF = False
 
     if TF:
+        # Only need frequency grids for TF method
+        fx_1d = torch.linspace(-0.5 / ps, 0.5 / ps, Wimg, device=u.device)
+        fy_1d = torch.linspace(0.5 / ps, -0.5 / ps, Himg, device=u.device)
+        fx, fy = torch.meshgrid(fx_1d, fy_1d, indexing="xy")
         H = torch.exp(-1j * torch.pi * wvln_mm * z * (fx**2 + fy**2))
         H = fftshift(H)
     else:
+        # Only need spatial grids for IR method
+        x_1d = torch.linspace(-0.5 * Wimg * ps, 0.5 * Himg * ps, Wimg, device=u.device)
+        y_1d = torch.linspace(0.5 * Wimg * ps, -0.5 * Himg * ps, Himg, device=u.device)
+        x, y = torch.meshgrid(x_1d, y_1d, indexing="xy")
         h_amp = 1 / (1j * wvln_mm * z)
         h_const_phase = torch.exp(1j * k * z)
         h_phase = torch.exp(1j * torch.pi / (wvln_mm * z) * (x**2 + y**2))
@@ -742,18 +743,18 @@ def RayleighSommerfeldIntegral(
     if not memory_saving:
         # Naive computation
 
-        # Broadcast to [H1, W1, H2, W2] for tensor parallel computation
-        x1 = x1.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, x2.shape[0], x2.shape[1])
-        y1 = y1.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, y2.shape[0], y2.shape[1])
-        u1 = u1.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, x2.shape[0], x2.shape[1])
+        # Broadcast to [H1, W1, H2, W2] via unsqueeze (no data copy)
+        x1_b = x1.unsqueeze(-1).unsqueeze(-1)  # [H1, W1, 1, 1]
+        y1_b = y1.unsqueeze(-1).unsqueeze(-1)  # [H1, W1, 1, 1]
+        u1_b = u1.unsqueeze(-1).unsqueeze(-1)  # [H1, W1, 1, 1]
 
         # Rayleigh-Sommerfeld diffraction integral
-        r2 = (x2 - x1) ** 2 + (y2 - y1) ** 2 + z**2  # shape of [H1, W1, H2, W2]
+        r2 = (x2 - x1_b) ** 2 + (y2 - y1_b) ** 2 + z**2  # shape of [H1, W1, H2, W2]
         r = torch.sqrt(r2)
         obliq = z / r
 
         u2 = torch.sum(
-            u1 * obliq / r * torch.exp(1j * torch.fmod(k * r, 2 * torch.pi)),
+            u1_b * obliq / r * torch.exp(1j * k * r),
             (0, 1),
         )
         u2 = u2 / (1j * wvln_mm)
@@ -762,11 +763,11 @@ def RayleighSommerfeldIntegral(
         # Patch computation
         u2 = torch.zeros_like(u1) + 0j
 
-        # Broadcast to [H1, W1, patch_size, patch_size] for tensor parallel computation
+        # Broadcast to [H1, W1, 1, 1] via unsqueeze (no data copy)
         patch_size = 4
-        x1 = x1.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, patch_size, patch_size)
-        y1 = y1.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, patch_size, patch_size)
-        u1 = u1.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, patch_size, patch_size)
+        x1_b = x1.unsqueeze(-1).unsqueeze(-1)  # [H1, W1, 1, 1]
+        y1_b = y1.unsqueeze(-1).unsqueeze(-1)  # [H1, W1, 1, 1]
+        u1_b = u1.unsqueeze(-1).unsqueeze(-1)  # [H1, W1, 1, 1]
 
         # Patch computation
         for i in tqdm(range(0, x2.shape[0], patch_size)):
@@ -774,13 +775,13 @@ def RayleighSommerfeldIntegral(
                 # Target patch
                 x2_patch = x2[i : i + patch_size, j : j + patch_size]
                 y2_patch = y2[i : i + patch_size, j : j + patch_size]
-                r2 = (x2_patch - x1) ** 2 + (y2_patch - y1) ** 2 + z**2
+                r2 = (x2_patch - x1_b) ** 2 + (y2_patch - y1_b) ** 2 + z**2
                 r = torch.sqrt(r2)
                 obliq = z / r
 
                 # Shape of [patch_size, patch_size]
                 u2_patch = torch.sum(
-                    u1 * obliq / r * torch.exp(1j * torch.fmod(k * r, 2 * torch.pi)),
+                    u1_b * obliq / r * torch.exp(1j * k * r),
                     (0, 1),
                 )
 

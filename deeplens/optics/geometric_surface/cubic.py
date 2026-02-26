@@ -75,8 +75,8 @@ class Cubic(Surface):
         else:
             raise ValueError("Unsupported cubic degree!")
 
-        if len(z.size()) == 0:
-            z = torch.tensor(z).to(self.device)
+        if z.dim() == 0:
+            z = z.clone().detach().to(self.device)
 
         if self.rotate_angle != 0:
             x = x * float(np.cos(self.rotate_angle)) + y * float(
@@ -189,11 +189,14 @@ class Cubic(Surface):
     # =========================================
     def surf_dict(self):
         """Return surface parameters."""
-        return {
+        d = {
             "type": "Cubic",
             "b3": self.b3.item(),
-            "b5": self.b5.item(),
-            "b7": self.b7.item(),
             "r": self.r,
             "(d)": round(self.d.item(), 4),
         }
+        if self.b_degree >= 2:
+            d["b5"] = self.b5.item()
+        if self.b_degree >= 3:
+            d["b7"] = self.b7.item()
+        return d

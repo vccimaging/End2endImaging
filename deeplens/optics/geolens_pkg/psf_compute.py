@@ -295,9 +295,9 @@ class GeoLensPSF:
 
         # Ray origin in the object space
         scale = self.calc_scale(points[:, 2].item())
-        points_obj = points.clone()
-        points_obj[:, 0] = points[:, 0] * scale * sensor_w / 2  # x coordinate
-        points_obj[:, 1] = points[:, 1] * scale * sensor_h / 2  # y coordinate
+        point_obj_x = points[:, 0] * scale * sensor_w / 2
+        point_obj_y = points[:, 1] * scale * sensor_h / 2
+        points_obj = torch.stack([point_obj_x, point_obj_y, points[:, 2]], dim=-1)
 
         # Ray center determined by chief ray
         # Shape of [N, 2], un-normalized physical coordinates
@@ -313,7 +313,7 @@ class GeoLensPSF:
 
         # Calculate complex field (same physical size and resolution as the sensor)
         # Complex field is flipped here for further PSF calculation
-        pointc_ref = torch.zeros_like(points[:, :2]).to(device)  # [N, 2]
+        pointc_ref = torch.zeros_like(points[:, :2])  # [N, 2]
         wavefront = forward_integral(
             ray.flip_xy(),
             ps=self.pixel_size,
@@ -531,7 +531,7 @@ class GeoLensPSF:
             # Shrink the pupil and calculate green light centroid ray as the chief ray
             ray = self.sample_from_points(points_obj, scale_pupil=0.5, num_rays=SPP_CALC)
             ray = self.trace2sensor(ray)
-            if not (ray.is_valid == 1).any():
+            if not ray.is_valid.any():
                 raise RuntimeError(
                     "When tracing chief ray for PSF center calculation, no ray arrives at the sensor."
                 )

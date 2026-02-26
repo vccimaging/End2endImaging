@@ -158,6 +158,8 @@ class Material(DeepObj):
             self.ref_wvlns = CUSTOM_data["INTERP_TABLE"]["wvlns"]
             self.ref_n = CUSTOM_data["INTERP_TABLE"][self.name]
             self.n = sum(self.ref_n) / len(self.ref_n)
+            self._ref_wvlns_t = torch.tensor(self.ref_wvlns)
+            self._ref_n_t = torch.tensor(self.ref_n)
 
         elif self.name in CUSTOM_data["SELLMEIER_TABLE"]:
             self.dispersion = "sellmeier"
@@ -243,7 +245,7 @@ class Material(DeepObj):
     def refractive_index(self, wvln):
         """Compute the refractive index at given wvln."""
         if isinstance(wvln, float):
-            wvln = torch.tensor(wvln).to(self.device)
+            wvln = torch.tensor(wvln, device=self.device)
             return self.ior(wvln).item()
 
         return self.ior(wvln)
@@ -277,9 +279,12 @@ class Material(DeepObj):
             n = self.A + self.B / (wvln * 1e3) ** 2
 
         elif self.dispersion == "interp":
-            # Convert reference wavelengths and refractive indices to tensors
-            ref_wvlns = torch.tensor(self.ref_wvlns, device=wvln.device)
-            ref_n = torch.tensor(self.ref_n, device=wvln.device)
+            # Use cached tensors, move to correct device if needed
+            if self._ref_wvlns_t.device != wvln.device:
+                self._ref_wvlns_t = self._ref_wvlns_t.to(wvln.device)
+                self._ref_n_t = self._ref_n_t.to(wvln.device)
+            ref_wvlns = self._ref_wvlns_t
+            ref_n = self._ref_n_t
 
             # Find the lower and upper bracketing wavelengths
             i = torch.searchsorted(ref_wvlns, wvln, side="right")
@@ -341,15 +346,12 @@ class Material(DeepObj):
             # Find the closest material
             n_range = 0.4 # refractive index range usually [1.5, 1.9]
             V_range = 40.0 # Abbe number range usually [30, 70]
-            dist_min = 1e6
-            for name in mat_table:
-                n, V = mat_table[name]
-                error_n = abs(n - self.n) / n_range
-                error_V = abs(V - self.V) / V_range
-                dist = error_n + error_V
-                if dist < dist_min:
-                    self.name = name
-                    dist_min = dist
+            n_self = float(self.n) if torch.is_tensor(self.n) else self.n
+            V_self = float(self.V) if torch.is_tensor(self.V) else self.V
+            self.name = min(
+                mat_table,
+                key=lambda name: abs(mat_table[name][0] - n_self) / n_range + abs(mat_table[name][1] - V_self) / V_range,
+            )
 
             # Load the new material parameters
             self.load_dispersion()
@@ -363,8 +365,8 @@ class Material(DeepObj):
             lrs (list): learning rates for n and V. Defaults to [1e-4, 1e-4].
         """
         if isinstance(self.n, float):
-            self.n = torch.tensor(self.n).to(self.device)
-            self.V = torch.tensor(self.V).to(self.device)
+            self.n = torch.tensor(self.n, device=self.device)
+            self.V = torch.tensor(self.V, device=self.device)
 
         self.n.requires_grad = True
         self.V.requires_grad = True

@@ -225,7 +225,7 @@ class GeoLensOptim:
         loss_sag2diam = torch.tensor(0.0, device=self.device)
         for i in self.find_diff_surf():
             # Sample points on the surface
-            x_ls = torch.linspace(0.0, 1.0, 32).to(self.device) * self.surfaces[i].r
+            x_ls = torch.linspace(0.0, 1.0, 32, device=self.device) * self.surfaces[i].r
             y_ls = torch.zeros_like(x_ls)
 
             # Sag
@@ -284,11 +284,11 @@ class GeoLensOptim:
             current_surf = self.surfaces[i]
             next_surf = self.surfaces[i + 1]
             
-            r_center = torch.tensor(0.0).to(self.device) * current_surf.r
+            r_center = torch.tensor(0.0, device=self.device) * current_surf.r
             z_prev_center = current_surf.surface_with_offset(r_center, 0.0, valid_check=False)
             z_next_center = next_surf.surface_with_offset(r_center, 0.0, valid_check=False)
-            
-            r_edge = torch.linspace(0.5, 1.0, 16).to(self.device) * current_surf.r
+
+            r_edge = torch.linspace(0.5, 1.0, 16, device=self.device) * current_surf.r
             z_prev_edge = current_surf.surface_with_offset(r_edge, 0.0, valid_check=False)
             z_next_edge = next_surf.surface_with_offset(r_edge, 0.0, valid_check=False)
 
@@ -318,7 +318,7 @@ class GeoLensOptim:
 
         # Distance to sensor (flange)
         last_surf = self.surfaces[-1]
-        r = torch.linspace(0.0, 1.0, 32).to(self.device) * last_surf.r
+        r = torch.linspace(0.0, 1.0, 32, device=self.device) * last_surf.r
         z_last_surf = self.d_sensor - last_surf.surface_with_offset(r, 0.0)
         
         flange = torch.min(z_last_surf)
@@ -350,11 +350,11 @@ class GeoLensOptim:
             current_surf = self.surfaces[i]
             next_surf = self.surfaces[i + 1]
             
-            r_center = torch.tensor(0.0).to(self.device) * current_surf.r
+            r_center = torch.tensor(0.0, device=self.device) * current_surf.r
             z_prev_center = current_surf.surface_with_offset(r_center, 0.0, valid_check=False)
             z_next_center = next_surf.surface_with_offset(r_center, 0.0, valid_check=False)
-            
-            r_edge = torch.linspace(0.5, 1.0, 16).to(self.device) * current_surf.r
+
+            r_edge = torch.linspace(0.5, 1.0, 16, device=self.device) * current_surf.r
             z_prev_edge = current_surf.surface_with_offset(r_edge, 0.0, valid_check=False)
             z_next_edge = next_surf.surface_with_offset(r_edge, 0.0, valid_check=False)
 
@@ -384,7 +384,7 @@ class GeoLensOptim:
 
         # Distance to sensor (flange)
         last_surf = self.surfaces[-1]
-        r = torch.linspace(0.0, 1.0, 32).to(self.device) * last_surf.r
+        r = torch.linspace(0.0, 1.0, 32, device=self.device) * last_surf.r
         z_last_surf = self.d_sensor - last_surf.surface_with_offset(r, 0.0)
         
         flange = torch.max(z_last_surf)
@@ -411,19 +411,17 @@ class GeoLensOptim:
         ray = self.trace2sensor(ray)
         cos_cra = ray.d[..., 2]
         cos_cra_ref = float(np.cos(np.deg2rad(max_angle_deg)))
-        if (cos_cra < cos_cra_ref).any():
-            loss_cra = - cos_cra[cos_cra < cos_cra_ref].mean()
-        else:
-            loss_cra = torch.tensor(0.0, device=self.device)
+        mask_cra = (cos_cra < cos_cra_ref).float()
+        count_cra = mask_cra.sum()
+        loss_cra = -(cos_cra * mask_cra).sum() / (count_cra + EPSILON)
 
         # Loss on accumulated oblique term
         ray = self.sample_ring_arm_rays(num_ring=8, num_arm=8, spp=SPP_CALC, scale_pupil=1.0)
         ray = self.trace2sensor(ray)
         obliq = ray.obliq.squeeze(-1)
-        if (obliq < obliq_min).any():
-            loss_obliq = - obliq[obliq < obliq_min].mean()
-        else:
-            loss_obliq = torch.tensor(0.0, device=self.device)
+        mask_obliq = (obliq < obliq_min).float()
+        count_obliq = mask_obliq.sum()
+        loss_obliq = -(obliq * mask_obliq).sum() / (count_obliq + EPSILON)
 
         return loss_cra + loss_obliq
 
@@ -442,15 +440,15 @@ class GeoLensOptim:
         V_min = 30
         loss_mat = torch.tensor(0.0, device=self.device)
         for i in range(len(self.surfaces)):
-            if self.surfaces[i].mat1.name != "air":
-                if self.surfaces[i].mat1.n > n_max:
-                    loss_mat += (self.surfaces[i].mat1.n - n_max) / (n_max - n_min)
-                if self.surfaces[i].mat1.n < n_min:
-                    loss_mat += (n_min - self.surfaces[i].mat1.n) / (n_max - n_min)
-                if self.surfaces[i].mat1.V > V_max:
-                    loss_mat += (self.surfaces[i].mat1.V - V_max) / (V_max - V_min)
-                if self.surfaces[i].mat1.V < V_min:
-                    loss_mat += (V_min - self.surfaces[i].mat1.V) / (V_max - V_min)
+            if self.surfaces[i].mat2.name != "air":
+                if self.surfaces[i].mat2.n > n_max:
+                    loss_mat += (self.surfaces[i].mat2.n - n_max) / (n_max - n_min)
+                if self.surfaces[i].mat2.n < n_min:
+                    loss_mat += (n_min - self.surfaces[i].mat2.n) / (n_max - n_min)
+                if self.surfaces[i].mat2.V > V_max:
+                    loss_mat += (self.surfaces[i].mat2.V - V_max) / (V_max - V_min)
+                if self.surfaces[i].mat2.V < V_min:
+                    loss_mat += (V_min - self.surfaces[i].mat2.V) / (V_max - V_min)
         
         return loss_mat
 
