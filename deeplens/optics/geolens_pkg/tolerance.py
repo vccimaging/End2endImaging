@@ -26,7 +26,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from ..config import DEPTH
+from ..config import DEPTH, SPP_CALC
 
 
 class GeoLensTolerance:
@@ -128,7 +128,7 @@ class GeoLensTolerance:
         return sensitivity_results
 
     @torch.no_grad()
-    def tolerancing_monte_carlo(self, trials=200, tolerance_params=None):
+    def tolerancing_monte_carlo(self, trials=200, spp=SPP_CALC, tolerance_params=None):
         """Use Monte Carlo simulation to compute the tolerance.
 
         The default ``trials=200`` is tuned for ~3 min runtime on GPU.
@@ -137,6 +137,9 @@ class GeoLensTolerance:
 
         Args:
             trials (int): Number of Monte Carlo trials. Defaults to 200.
+            spp (int): Samples per pixel for PSF calculation. Lower values
+                run faster at the cost of noisier MTF estimates. Defaults to
+                SPP_CALC (1024), which is ~16x faster than the full SPP_PSF.
             tolerance_params (dict): Tolerance parameters.
 
         Returns:
@@ -151,7 +154,7 @@ class GeoLensTolerance:
             """Evaluate MTF merit at a single field point."""
             try:
                 point = [0, -fov / lens.rfov, depth]
-                psf = lens.psf(points=point, recenter=True)
+                psf = lens.psf(points=point, spp=spp, recenter=True)
                 freq, mtf_tan, mtf_sag = lens.psf2mtf(psf, pixel_size=lens.pixel_size)
 
                 # Evaluate MTF at quarter-Nyquist frequency
@@ -177,15 +180,21 @@ class GeoLensTolerance:
         merit_ls = []
         with torch.no_grad():
             for i in tqdm(range(trials)):
-                # Sample a random perturbation
-                self.sample_tolerance()
+                # Sample a random perturbation and refocus sensor only
+                # (skip full post_computation — focal length, pupil, and FoV
+                # don't change meaningfully under small tolerance errors).
+                for surf in self.surfaces:
+                    surf.sample_tolerance()
+                self.d_sensor = self.calc_sensor_plane()
 
                 # Evaluate perturbed performance across multiple field positions
                 perturbed_merit = multi_field_merit(lens=self, depth=DEPTH)
                 merit_ls.append(perturbed_merit)
 
-                # Clear perturbation
-                self.zero_tolerance()
+                # Clear perturbation (no refocus needed — next iteration
+                # will set sensor position after sampling).
+                for surf in self.surfaces:
+                    surf.zero_tolerance()
 
         merit_ls = np.array(merit_ls)
 
