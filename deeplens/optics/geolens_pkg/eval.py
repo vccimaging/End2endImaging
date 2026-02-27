@@ -302,6 +302,7 @@ class GeoLensEval:
     # ================================================================
     # Distortion
     # ================================================================
+    @torch.no_grad()
     def calc_distortion_2D(
         self, rfov, wvln=DEFAULT_WAVE, plane="meridional", ray_aiming=True
     ):
@@ -348,6 +349,7 @@ class GeoLensEval:
 
         return distortion
 
+    @torch.no_grad()
     def draw_distortion_radial(
         self,
         rfov,
@@ -358,28 +360,33 @@ class GeoLensEval:
         ray_aiming=True,
         show=False,
     ):
-        """Draw distortion. zemax format(default): ray_aiming = False.
-
-        Note: this function is provided by a community contributor.
+        """Draw distortion curve vs field angle (Zemax format).
 
         Args:
             rfov: view angle (degrees)
             save_name: Save filename. Defaults to None.
             num_points: Number of points. Defaults to GEO_GRID.
             plane: Meridional or sagittal. Defaults to meridional.
-            ray_aiming: Whether to use ray aiming. Defaults to False.
+            ray_aiming: Whether to use ray aiming. Defaults to True.
         """
-        # Sample view angles
-        rfov_samples = torch.linspace(0, rfov, num_points)
-        distortions = []
+        # Sample view angles starting from a small positive angle to avoid
+        # numerical instability at near-zero FOV (distortion is 0 by definition
+        # at FOV=0). Prepend 0 explicitly.
+        min_fov = max(0.5, rfov / (num_points - 1))  # at least 0.5 degrees
+        min_fov = min(min_fov, rfov * 0.25)  # don't skip more than 25% of range
+        rfov_inner = torch.linspace(min_fov, rfov, num_points - 1)
+        rfov_samples = torch.cat([torch.zeros(1), rfov_inner])
 
-        # Calculate distortion
-        distortions = self.calc_distortion_2D(
-            rfov=rfov_samples,
+        # Calculate distortion (skip the zero-angle point, set it to 0)
+        distortions_inner = self.calc_distortion_2D(
+            rfov=rfov_inner,
             wvln=wvln,
             plane=plane,
             ray_aiming=ray_aiming,
         )
+
+        # Prepend 0 distortion for the on-axis point
+        distortions = np.concatenate([[0.0], np.asarray(distortions_inner)])
 
         # Handle possible NaN values and convert to percentage
         values = np.nan_to_num(distortions * 100, nan=0.0).tolist()
@@ -486,6 +493,7 @@ class GeoLensEval:
         distortion_center = torch.stack((distortion_center_x, distortion_center_y), dim=-1)
         return distortion_center
 
+    @torch.no_grad()
     def draw_distortion(
         self, save_name=None, num_grid=16, depth=DEPTH, wvln=DEFAULT_WAVE, show=False
     ):
@@ -843,7 +851,8 @@ class GeoLensEval:
     # ================================================================
     # Vignetting
     # ================================================================
-    def vignetting(self, depth=DEPTH, num_grid=64):
+    @torch.no_grad()
+    def vignetting(self, depth=DEPTH, num_grid=32, num_rays=512):
         """Compute relative illumination (vignetting) map.
 
         Measures the fraction of rays that successfully reach the sensor for each
@@ -851,14 +860,18 @@ class GeoLensEval:
 
         Args:
             depth (float, optional): Object distance. Defaults to DEPTH.
-            num_grid (int, optional): Grid resolution for field sampling. Defaults to 64.
+            num_grid (int, optional): Grid resolution for field sampling. Defaults to 32.
+            num_rays (int, optional): Number of rays per grid point. Defaults to 512.
 
         Returns:
             Tensor: Vignetting map with values in [0, 1]. Shape [num_grid, num_grid].
                 A value of 1.0 means no vignetting; 0.0 means fully vignetted.
         """
-        # Sample rays, shape [num_grid, num_grid, num_rays, 3]
-        ray = self.sample_grid_rays(depth=depth, num_grid=num_grid)
+        # Sample rays in uniform image space (not FOV angles) for correct sensor mapping
+        # shape [num_grid, num_grid, num_rays, 3]
+        ray = self.sample_grid_rays(
+            depth=depth, num_grid=num_grid, num_rays=num_rays, uniform_fov=False
+        )
 
         # Trace rays to sensor
         ray = self.trace2sensor(ray)
@@ -867,6 +880,7 @@ class GeoLensEval:
         vignetting = ray.is_valid.sum(-1) / (ray.is_valid.shape[-1])
         return vignetting
 
+    @torch.no_grad()
     def draw_vignetting(self, filename=None, depth=DEPTH, resolution=512, show=False):
         """Draw vignetting (relative illumination) map as a grayscale image.
 
@@ -889,12 +903,10 @@ class GeoLensEval:
             align_corners=False,
         ).squeeze()
 
-        # Scale vignetting to [0.5, 1] range
-        vignetting = 0.5 + 0.5 * vignetting
-
         fig, ax = plt.subplots()
-        im = ax.imshow(vignetting.cpu().numpy(), cmap="gray", vmin=0.5, vmax=1.0)
-        fig.colorbar(im, ax=ax, ticks=[0.5, 0.75, 1.0])
+        ax.set_title("Relative Illumination (Vignetting)")
+        im = ax.imshow(vignetting.cpu().numpy(), cmap="gray", vmin=0.0, vmax=1.0)
+        fig.colorbar(im, ax=ax, ticks=[0.0, 0.25, 0.5, 0.75, 1.0])
 
         if show:
             plt.show()
@@ -1003,27 +1015,30 @@ class GeoLensEval:
                 return chief_ray_o, chief_ray_d
 
         # Extract non-zero rfov entries for processing
-        if torch.any(rfov == 0):
+        has_zero = torch.any(rfov == 0)
+        if has_zero:
+            start_idx = 1
             rfovs = rfov[1:]
             depths = depth[1:]
         else:
+            start_idx = 0
             rfovs = rfov
             depths = depth
 
         if self.aper_idx == 0:
             if plane == "sagittal":
-                chief_ray_o[1:, ...] = torch.stack(
+                chief_ray_o[start_idx:, ...] = torch.stack(
                     [depths * torch.tan(rfovs), torch.zeros_like(rfovs), depths], dim=-1
                 )
-                chief_ray_d[1:, ...] = torch.stack(
+                chief_ray_d[start_idx:, ...] = torch.stack(
                     [torch.sin(rfovs), torch.zeros_like(rfovs), torch.cos(rfovs)],
                     dim=-1,
                 )
             else:
-                chief_ray_o[1:, ...] = torch.stack(
+                chief_ray_o[start_idx:, ...] = torch.stack(
                     [torch.zeros_like(rfovs), depths * torch.tan(rfovs), depths], dim=-1
                 )
-                chief_ray_d[1:, ...] = torch.stack(
+                chief_ray_d[start_idx:, ...] = torch.stack(
                     [torch.zeros_like(rfovs), torch.sin(rfovs), torch.cos(rfovs)],
                     dim=-1,
                 )
@@ -1031,27 +1046,28 @@ class GeoLensEval:
             return chief_ray_o, chief_ray_d
 
         # Scale factor
-        pupilz, _ = self.calc_entrance_pupil()
+        pupilz, pupilr = self.calc_entrance_pupil()
         y_distance = torch.tan(rfovs) * (abs(depths) + pupilz)
 
         if ray_aiming:
             scale = 0.05
-            delta = scale * y_distance
+            min_delta = 0.05 * pupilr  # minimum search range based on pupil radius
+            delta = torch.clamp(scale * y_distance, min=min_delta)
 
         if not ray_aiming:
             if plane == "sagittal":
-                chief_ray_o[1:, ...] = torch.stack(
+                chief_ray_o[start_idx:, ...] = torch.stack(
                     [-y_distance, torch.zeros_like(rfovs), depths], dim=-1
                 )
-                chief_ray_d[1:, ...] = torch.stack(
+                chief_ray_d[start_idx:, ...] = torch.stack(
                     [torch.sin(rfovs), torch.zeros_like(rfovs), torch.cos(rfovs)],
                     dim=-1,
                 )
             else:
-                chief_ray_o[1:, ...] = torch.stack(
+                chief_ray_o[start_idx:, ...] = torch.stack(
                     [torch.zeros_like(rfovs), -y_distance, depths], dim=-1
                 )
-                chief_ray_d[1:, ...] = torch.stack(
+                chief_ray_d[start_idx:, ...] = torch.stack(
                     [torch.zeros_like(rfovs), torch.sin(rfovs), torch.cos(rfovs)],
                     dim=-1,
                 )
@@ -1086,19 +1102,19 @@ class GeoLensEval:
             # Look for the ray that is closest to the optical axis
             if plane == "sagittal":
                 _, center_idx = torch.min(torch.abs(ray.o[..., 0]), dim=1)
-                chief_ray_o[1:, ...] = inc_ray.o[
+                chief_ray_o[start_idx:, ...] = inc_ray.o[
                     torch.arange(len(rfovs)), center_idx.long(), ...
                 ]
-                chief_ray_d[1:, ...] = torch.stack(
+                chief_ray_d[start_idx:, ...] = torch.stack(
                     [torch.sin(rfovs), torch.zeros_like(rfovs), torch.cos(rfovs)],
                     dim=-1,
                 )
             else:
                 _, center_idx = torch.min(torch.abs(ray.o[..., 1]), dim=1)
-                chief_ray_o[1:, ...] = inc_ray.o[
+                chief_ray_o[start_idx:, ...] = inc_ray.o[
                     torch.arange(len(rfovs)), center_idx.long(), ...
                 ]
-                chief_ray_d[1:, ...] = torch.stack(
+                chief_ray_d[start_idx:, ...] = torch.stack(
                     [torch.zeros_like(rfovs), torch.sin(rfovs), torch.cos(rfovs)],
                     dim=-1,
                 )
@@ -1193,6 +1209,7 @@ class GeoLensEval:
 
         return img_render
 
+    @torch.no_grad()
     def analysis_spot(self, num_field=3, depth=float("inf")):
         """Compute sensor plane ray spot RMS error and radius.
 
