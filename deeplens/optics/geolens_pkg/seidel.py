@@ -21,15 +21,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from ..config import WVLN_C, WVLN_F, WVLN_d
 from ..geometric_surface import Aperture, Aspheric, AsphericNorm
 from ..material import Material
 
 logger = logging.getLogger(__name__)
-
-# Fraunhofer wavelengths [µm]
-WVLN_d = 0.5876
-WVLN_F = 0.4861
-WVLN_C = 0.6563
 
 # Aspheric surface types (both have c, k, ai attributes)
 _ASPHERIC_TYPES = (Aspheric, AsphericNorm)
