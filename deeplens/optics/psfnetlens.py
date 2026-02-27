@@ -10,12 +10,16 @@ Technical Paper:
     Xinge Yang, Qiang Fu, Mohamed Elhoseiny, and Wolfgang Heidrich, "Aberration-Aware Depth-from-Focus" IEEE-TPAMI 2023.
 """
 
+import logging
+
 import numpy as np
 import torch
 import torch.nn as nn
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 from transformers import get_cosine_schedule_with_warmup
+
+logger = logging.getLogger(__name__)
 
 from .geolens import GeoLens
 from .lens import Lens
@@ -149,11 +153,11 @@ class PSFNetLens(Lens):
         """
         # Check the correct model is loaded
         psfnet_dict = torch.load(net_path, map_location="cpu", weights_only=False)
-        print(
+        logger.info(
             f"Pretrained model lens pixel size: {psfnet_dict['pixel_size']*1000.0:.1f} um, "
             f"Current lens pixel size: {self.pixel_size*1000.0:.1f} um"
         )
-        print(
+        logger.info(
             f"Pretrained model lens path: {psfnet_dict['lens_path']}, "
             f"Current lens path: {self.lens_path}"
         )

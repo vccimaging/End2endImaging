@@ -14,6 +14,8 @@ Provides methods for managing optical surface geometry:
 
 import logging
 
+logger = logging.getLogger(__name__)
+
 import numpy as np
 import torch
 
@@ -86,7 +88,7 @@ class GeoLensSurfOps:
                     f"Aspheric surface, use increase_aspheric_order(surf_idx={surf_idx})."
                 )
             self._spheric_to_aspheric(surf_idx, ai_degree)
-            logging.info(
+            logger.info(
                 f"Converted surface {surf_idx} from Spheric to Aspheric "
                 f"(ai_degree={ai_degree})."
             )
@@ -95,7 +97,7 @@ class GeoLensSurfOps:
         # Auto-select best candidate
         surf_idx = self._find_best_asphere_candidate()
         self._spheric_to_aspheric(surf_idx, ai_degree)
-        logging.info(
+        logger.info(
             f"Auto-selected surface {surf_idx} as best asphere candidate. "
             f"Converted to Aspheric (ai_degree={ai_degree})."
         )
@@ -182,14 +184,14 @@ class GeoLensSurfOps:
             if inner:
                 candidates = inner
             else:
-                logging.warning(
+                logger.warning(
                     "All remaining candidates are outermost surfaces; "
                     "falling back to full candidate list."
                 )
             candidates.sort(key=lambda x: (-x[1], -x[2]))
 
         best_idx = candidates[0][0]
-        logging.info(
+        logger.info(
             f"Asphere candidates (idx, dist_from_stop, radius): "
             f"{[(c[0], round(c[1], 2), round(c[2], 2)) for c in candidates]}. "
             f"Selected surface {best_idx}."
@@ -302,7 +304,7 @@ class GeoLensSurfOps:
             )
         old_degree = surf.ai_degree
         self._increase_surface_order(surf, increment)
-        logging.info(
+        logger.info(
             f"Surface {surf_idx}: aspheric order {old_degree} -> {surf.ai_degree}."
         )
 
@@ -351,7 +353,7 @@ class GeoLensSurfOps:
         candidates.sort(key=lambda x: (x[1], -x[2], -x[3]))
 
         best_idx = candidates[0][0]
-        logging.info(
+        logger.info(
             f"Order-increase candidates (idx, degree, r, Δn): "
             f"{[(c[0], c[1], round(c[2], 2), round(c[3], 3)) for c in candidates]}. "
             f"Selected surface {best_idx}."
@@ -427,7 +429,7 @@ class GeoLensSurfOps:
         else:
             fov = np.arctan(self.r_sensor / self.foclen)
             fov_deg = float(fov) * 180 / torch.pi
-            print(f"Using fov_deg: {fov_deg} during surface pruning.")
+            logger.warning(f"Using fov_deg: {fov_deg} during surface pruning.")
 
         fov_y = [f * fov_deg / 10 for f in range(0, 11)]
         ray = self.sample_parallel(
@@ -462,7 +464,7 @@ class GeoLensSurfOps:
                     r_new = r_clear + r_expand
                 self.surfaces[i].update_r(r_new)
             else:
-                print(f"No valid rays for Surf {i}, expand existing radius.")
+                logger.warning(f"No valid rays for Surf {i}, expand existing radius.")
                 if mounting_margin is not None:
                     self.surfaces[i].update_r(self.surfaces[i].r + mounting_margin)
                 else:
@@ -515,7 +517,7 @@ class GeoLensSurfOps:
 
                 r_safe = r_lo
                 if r_safe > 0 and r_safe < r_check:
-                    print(
+                    logger.warning(
                         f"Surf {i}-{i+1}: edge thickness {edge_thickness:.3f} mm "
                         f"< {et_min} mm, shrinking radius {r_check:.3f} -> {r_safe:.3f} mm."
                     )
@@ -568,7 +570,7 @@ class GeoLensSurfOps:
 
                 r_safe = r_lo
                 if r_safe > 0 and r_safe < r_check:
-                    print(
+                    logger.warning(
                         f"Surf {i}-{i+1}: air gap {min_gap:.3f} mm "
                         f"< {air_gap_min} mm, shrinking radius {r_check:.3f} -> {r_safe:.3f} mm."
                     )
@@ -594,7 +596,7 @@ class GeoLensSurfOps:
             if neighbor_r:
                 max_aper_r = min(neighbor_r)
                 if aper.r > max_aper_r:
-                    print(
+                    logger.warning(
                         f"Aperture radius {aper.r:.3f} mm exceeds neighbor "
                         f"clear aperture {max_aper_r:.3f} mm, clamping."
                     )
@@ -649,7 +651,7 @@ class GeoLensSurfOps:
         self.prune_surf(expand_factor=expand_factor, mounting_margin=mounting_margin)
 
         if shape_changed:
-            print("Surface shape corrected.")
+            logger.info("Surface shape corrected.")
         return shape_changed
 
     @torch.no_grad()

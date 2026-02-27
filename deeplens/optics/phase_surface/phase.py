@@ -1,5 +1,7 @@
 """Phase class: a plane surface with phase pattern on it."""
 
+import logging
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -8,6 +10,8 @@ import torch.nn.functional as F
 from ..config import EPSILON
 from ..base import DeepObj
 from ..material import Material
+
+logger = logging.getLogger(__name__)
 
 
 class Phase(DeepObj):
@@ -129,7 +133,7 @@ class Phase(DeepObj):
         """Activate diffraction of DOE in ray tracing."""
         self.diffraction = True
         self.diffraction_order = diffraction_order
-        print("Diffraction of DOE in ray tracing is enabled.")
+        logger.info("Diffraction of DOE in ray tracing is enabled.")
 
     def ray_reaction(self, ray, n1=None, n2=None):
         """Ray reaction on DOE surface."""
