@@ -285,31 +285,64 @@ class GeoLens(
         depth=float("inf"),
         num_rays=SPP_PSF,
         wvln=DEFAULT_WAVE,
+        direction="y",
     ):
-        """Sample radial (meridional, y direction) rays at different field angles.
-
-        This function is usually used for (1) PSF radial map, and (2) RMS error radial map calculation.
+        """Sample radial rays at evenly-spaced field angles along a chosen direction.
 
         Args:
-            num_field (int, optional): number of field angles. Defaults to 5.
-            depth (float, optional): sampling depth. Defaults to float("inf").
-            num_rays (int, optional): number of rays. Defaults to SPP_PSF.
-            wvln (float, optional): ray wvln. Defaults to DEFAULT_WAVE.
+            num_field (int): Number of field angles from on-axis to full-field.
+                Defaults to 5.
+            depth (float): Object distance in mm. Use ``float('inf')`` for
+                collimated light. Defaults to ``float('inf')``.
+            num_rays (int): Rays per field position. Defaults to ``SPP_PSF``.
+            wvln (float): Wavelength in micrometers. Defaults to ``DEFAULT_WAVE``.
+            direction (str): Sampling direction —
+                ``"y"`` (meridional, default),
+                ``"x"`` (sagittal),
+                ``"diagonal"`` (45°, x = y).
 
         Returns:
-            ray (Ray object): Ray object. Shape [num_field, num_rays, 3]
+            Ray: Ray object with shape ``[num_field, num_rays, 3]``.
         """
         device = self.device
         fov_deg = float(np.rad2deg(self.rfov))
-        fov_y_list = torch.linspace(0, fov_deg, num_field, device=device)
+        fov_list = torch.linspace(0, fov_deg, num_field, device=device)
 
         if depth == float("inf"):
-            ray = self.sample_parallel(
-                fov_x=0.0, fov_y=fov_y_list, num_rays=num_rays, wvln=wvln
-            )
+            if direction == "y":
+                ray = self.sample_parallel(
+                    fov_x=0.0, fov_y=fov_list, num_rays=num_rays, wvln=wvln
+                )
+            elif direction == "x":
+                ray = self.sample_parallel(
+                    fov_x=fov_list, fov_y=0.0, num_rays=num_rays, wvln=wvln
+                )
+            elif direction == "diagonal":
+                # sample_parallel creates a meshgrid; for pairwise diagonal, loop
+                rays = [
+                    self.sample_parallel(
+                        fov_x=f.item(), fov_y=f.item(), num_rays=num_rays, wvln=wvln
+                    )
+                    for f in fov_list
+                ]
+                ray_o = torch.stack([r.o for r in rays], dim=0)
+                ray_d = torch.stack([r.d for r in rays], dim=0)
+                ray = Ray(ray_o, ray_d, wvln, device=device)
+            else:
+                raise ValueError(f"Invalid direction: {direction!r}. Use 'x', 'y', or 'diagonal'.")
         else:
-            point_obj_x = torch.zeros(num_field, device=device)
-            point_obj_y = depth * torch.tan(fov_y_list * torch.pi / 180.0)
+            # Convert field angles to physical object-space points
+            if direction == "y":
+                point_obj_x = torch.zeros(num_field, device=device)
+                point_obj_y = depth * torch.tan(fov_list * torch.pi / 180.0)
+            elif direction == "x":
+                point_obj_x = depth * torch.tan(fov_list * torch.pi / 180.0)
+                point_obj_y = torch.zeros(num_field, device=device)
+            elif direction == "diagonal":
+                point_obj_x = depth * torch.tan(fov_list * torch.pi / 180.0)
+                point_obj_y = depth * torch.tan(fov_list * torch.pi / 180.0)
+            else:
+                raise ValueError(f"Invalid direction: {direction!r}. Use 'x', 'y', or 'diagonal'.")
             point_obj = torch.stack(
                 [point_obj_x, point_obj_y, torch.full_like(point_obj_x, depth)], dim=-1
             )
