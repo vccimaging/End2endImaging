@@ -45,7 +45,7 @@ from ..config import (
     SPP_PSF,
     WAVE_RGB,
 )
-from ..geometric_surface import Aperture, Aspheric, AsphericNorm, Plane, Spheric, ThinLens
+from ..geometric_surface import Aperture, Aspheric, Plane, Spheric, ThinLens
 from ..phase_surface import Phase
 
 
@@ -92,14 +92,14 @@ class GeoLensOptim:
             self.air_min_center = 0.05
             self.thick_min_edge = 0.25
             self.thick_min_center = 0.4
-            self.flange_min = 0.8
+            self.bfl_min = 0.8
 
             # Air gap and thickness upper bounds
             self.air_max_edge = 3.0
             self.air_max_center = 0.5
             self.thick_max_edge = 2.0
             self.thick_max_center = 3.0
-            self.flange_max = 3.0
+            self.bfl_max = 3.0
 
             # Surface shape constraints
             self.sag2diam_max = 0.1
@@ -119,14 +119,14 @@ class GeoLensOptim:
             self.air_min_center = 0.1
             self.thick_min_edge = 1.0
             self.thick_min_center = 2.0
-            self.flange_min = 5.0
+            self.bfl_min = 5.0
             
             # Air gap and thickness upper bounds
             self.air_max_edge = 100.0  # float("inf")
             self.air_max_center = 100.0  # float("inf")
             self.thick_max_edge = 20.0
             self.thick_max_center = 20.0
-            self.flange_max = 100.0  # float("inf")
+            self.bfl_max = 100.0  # float("inf")
 
             # Surface shape constraints
             self.sag2diam_max = 0.2
@@ -275,7 +275,7 @@ class GeoLensOptim:
         air_min_edge = self.air_min_edge
         thick_min_center = self.thick_min_center
         thick_min_edge = self.thick_min_edge
-        flange_min = self.flange_min
+        bfl_min = self.bfl_min
 
         # Loss
         loss = torch.tensor(0.0, device=self.device)
@@ -316,14 +316,14 @@ class GeoLensOptim:
                 if dist_edge < thick_min_edge:
                     loss += dist_edge
 
-        # Distance to sensor (flange)
+        # Distance to sensor (back focal length)
         last_surf = self.surfaces[-1]
         r = torch.linspace(0.0, 1.0, 32, device=self.device) * last_surf.r
         z_last_surf = self.d_sensor - last_surf.surface_with_offset(r, 0.0)
-        
-        flange = torch.min(z_last_surf)
-        if flange < flange_min:
-            loss += flange
+
+        bfl = torch.min(z_last_surf)
+        if bfl < bfl_min:
+            loss += bfl
 
         # Loss, maximize loss
         return -loss
@@ -339,7 +339,7 @@ class GeoLensOptim:
         air_max_edge = self.air_max_edge
         thick_max_center = self.thick_max_center
         thick_max_edge = self.thick_max_edge
-        flange_max = self.flange_max
+        bfl_max = self.bfl_max
 
         # Loss
         loss = torch.tensor(0.0, device=self.device)
@@ -382,14 +382,14 @@ class GeoLensOptim:
                 if dist_edge > thick_max_edge:
                     loss += dist_edge
 
-        # Distance to sensor (flange)
+        # Distance to sensor (back focal length)
         last_surf = self.surfaces[-1]
         r = torch.linspace(0.0, 1.0, 32, device=self.device) * last_surf.r
         z_last_surf = self.d_sensor - last_surf.surface_with_offset(r, 0.0)
-        
-        flange = torch.max(z_last_surf)
-        if flange > flange_max:
-            loss += flange
+
+        bfl = torch.max(z_last_surf)
+        if bfl > bfl_max:
+            loss += bfl
 
         # Loss, minimize loss
         return loss
@@ -553,7 +553,6 @@ class GeoLensOptim:
     def optimize(
         self,
         lrs=[1e-3, 1e-4, 1e-1, 1e-4],
-        decay=0.01,
         iterations=5000,
         test_per_iter=100,
         centroid=False,
@@ -570,8 +569,6 @@ class GeoLensOptim:
         Args:
             lrs (list, optional): Learning rates for [d, c, k, a] parameter groups.
                 Defaults to [1e-3, 1e-4, 1e-1, 1e-4].
-            decay (float, optional): Decay factor for higher-order aspheric coefficients.
-                Defaults to 0.01.
             iterations (int, optional): Total training iterations. Defaults to 5000.
             test_per_iter (int, optional): Evaluate and save every N iterations.
                 Defaults to 100.
@@ -619,7 +616,7 @@ class GeoLensOptim:
         logging.info("If Out-of-Memory, try to reduce num_ring, num_arm, and rays_per_fov.")
 
         # Optimizer and scheduler
-        optimizer = self.get_optimizer(lrs, decay=decay, optim_mat=optim_mat)
+        optimizer = self.get_optimizer(lrs, optim_mat=optim_mat)
         scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=100, num_training_steps=iterations)
 
         # Training loop
@@ -712,7 +709,6 @@ class GeoLensOptim:
     def get_optimizer_params(
         self,
         lrs=[1e-4, 1e-4, 1e-2, 1e-4],
-        decay=0.01,
         optim_mat=False,
         optim_surf_range=None,
     ):
@@ -724,7 +720,6 @@ class GeoLensOptim:
 
         Args:
             lrs (list): learning rate for different parameters.
-            decay (float): decay rate for higher order a. Defaults to 0.01.
             optim_mat (bool): whether to optimize material. Defaults to False.
             optim_surf_range (list): surface indices to be optimized. Defaults to None.
 
@@ -752,12 +747,7 @@ class GeoLensOptim:
 
             elif isinstance(surf, Aspheric):
                 params += surf.get_optimizer_params(
-                    lrs=lrs[:4], decay=decay, optim_mat=optim_mat
-                )
-
-            elif isinstance(surf, AsphericNorm):
-                params += surf.get_optimizer_params(
-                    lrs=lrs[:4], decay=decay, optim_mat=optim_mat
+                    lrs=lrs[:4], optim_mat=optim_mat
                 )
 
             elif isinstance(surf, Phase):
@@ -799,7 +789,6 @@ class GeoLensOptim:
     def get_optimizer(
         self,
         lrs=[1e-4, 1e-4, 1e-1, 1e-4],
-        decay=0.01,
         optim_surf_range=None,
         optim_mat=False,
     ):
@@ -807,7 +796,6 @@ class GeoLensOptim:
 
         Args:
             lrs (list): learning rate for different parameters [c, d, k, a]. Defaults to [1e-4, 1e-4, 0, 1e-4].
-            decay (float): decay rate for higher order a. Defaults to 0.2.
             optim_surf_range (list): surface indices to be optimized. Defaults to None.
             optim_mat (bool): whether to optimize material. Defaults to False.
 
@@ -819,8 +807,9 @@ class GeoLensOptim:
 
         # Get optimizer
         params = self.get_optimizer_params(
-            lrs=lrs, decay=decay, optim_surf_range=optim_surf_range, optim_mat=optim_mat
+            lrs=lrs, optim_surf_range=optim_surf_range, optim_mat=optim_mat
         )
         optimizer = torch.optim.Adam(params)
         # optimizer = torch.optim.SGD(params)
         return optimizer
+

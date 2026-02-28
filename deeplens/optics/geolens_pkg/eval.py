@@ -36,7 +36,6 @@ Functions:
     Wavefront & Aberration (placeholders):
         - wavefront_error(): Compute wavefront error
         - field_curvature(): Compute field curvature
-        - aberration_histogram(): Compute aberration histogram
 
     Chief Ray & Ray Aiming:
         - calc_chief_ray(): Compute chief ray for an incident angle
@@ -303,6 +302,7 @@ class GeoLensEval:
     # ================================================================
     # Distortion
     # ================================================================
+    @torch.no_grad()
     def calc_distortion_2D(
         self, rfov, wvln=DEFAULT_WAVE, plane="meridional", ray_aiming=True
     ):
@@ -349,6 +349,7 @@ class GeoLensEval:
 
         return distortion
 
+    @torch.no_grad()
     def draw_distortion_radial(
         self,
         rfov,
@@ -359,27 +360,32 @@ class GeoLensEval:
         ray_aiming=True,
         show=False,
     ):
-        """Draw distortion. zemax format(default): ray_aiming = False.
-
-        Note: this function is provided by a community contributor.
+        """Draw distortion curve vs field angle (Zemax format).
 
         Args:
             rfov: view angle (degrees)
             save_name: Save filename. Defaults to None.
             num_points: Number of points. Defaults to GEO_GRID.
             plane: Meridional or sagittal. Defaults to meridional.
-            ray_aiming: Whether to use ray aiming. Defaults to False.
+            ray_aiming: Whether to use ray aiming. Defaults to True.
         """
-        # Sample view angles
+        # Sample view angles uniformly from 0 to rfov.
+        # For the on-axis point (FOV=0), distortion is 0/0. We compute it at a
+        # tiny positive angle to obtain the correct limit, which may be non-zero
+        # when the sensor is not at the paraxial focus.
         rfov_samples = torch.linspace(0, rfov, num_points)
-        distortions = []
+        rfov_compute = rfov_samples.clone()
+        if rfov_compute[0] == 0:
+            rfov_compute[0] = min(0.01, rfov_samples[1].item() * 0.01)
 
-        # Calculate distortion
-        distortions = self.calc_distortion_2D(
-            rfov=rfov_samples,
-            wvln=wvln,
-            plane=plane,
-            ray_aiming=ray_aiming,
+        # Calculate distortion at all field angles
+        distortions = np.asarray(
+            self.calc_distortion_2D(
+                rfov=rfov_compute,
+                wvln=wvln,
+                plane=plane,
+                ray_aiming=ray_aiming,
+            )
         )
 
         # Handle possible NaN values and convert to percentage
@@ -487,6 +493,7 @@ class GeoLensEval:
         distortion_center = torch.stack((distortion_center_x, distortion_center_y), dim=-1)
         return distortion_center
 
+    @torch.no_grad()
     def draw_distortion(
         self, save_name=None, num_grid=16, depth=DEPTH, wvln=DEFAULT_WAVE, show=False
     ):
@@ -694,91 +701,122 @@ class GeoLensEval:
     def draw_field_curvature(
         self,
         save_name=None,
-        num_points=32,
+        num_points=64,
         z_span=1.0,
-        z_steps=1001,
+        z_steps=201,
         wvln_list=WAVE_RGB,
-        spp=SPP_CALC,
+        spp=256,
         show=False,
     ):
         """Draw field curvature: best-focus defocus vs field angle, RGB overlaid.
 
-        For each wavelength and field angle, sweeps defocus positions around the
-        sensor plane and finds the position that minimizes the tangential ray spread.
-        Plots tangential curves as solid lines.
+        For each wavelength, batches all field angles into a single ray tensor
+        and traces them in one call, then vectorizes the defocus sweep to find
+        the best-focus position per field angle.
 
         Args:
             save_name (str, optional): Path to save the figure. Defaults to
                 ``'./field_curvature.png'``.
-            num_points (int, optional): Number of field angle samples. Defaults to 32.
+            num_points (int, optional): Number of field angle samples. Defaults to 64.
             z_span (float, optional): Half-range of defocus sweep in mm. Defaults to 1.0.
-            z_steps (int, optional): Number of defocus steps. Defaults to 1001.
+            z_steps (int, optional): Number of defocus steps. Defaults to 201.
             wvln_list (list, optional): Wavelengths to evaluate. Defaults to WAVE_RGB.
-            spp (int, optional): Number of rays per field point. Defaults to SPP_CALC.
+            spp (int, optional): Number of rays per field point. Defaults to 256.
             show (bool, optional): If True, display plot interactively. Defaults to False.
         """
-        print("This function is not optimized for the best speed.")
         device = self.device
-        # Convert maximum field angle to degrees
         rfov_deg = float(self.rfov) * 180.0 / np.pi
 
-        # Sample field angles [0, rfov_deg]
+        # Sample field angles [0, rfov_deg], shape [F]
         rfov_samples = torch.linspace(0.0, rfov_deg, num_points, device=device)
 
-        # Prepare containers
-        delta_z_tan = []  # list of numpy arrays per wavelength
+        # Entrance pupil (computed once)
+        pupilz, pupilr = self.get_entrance_pupil()
 
-        # Defocus sweep grid (around current sensor plane)
+        # Defocus sweep grid, shape [Z]
         d_sensor = self.d_sensor
         z_grid = d_sensor + torch.linspace(-z_span, z_span, z_steps, device=device)
 
-        # Helper to compute best focus along a given axis (0=x sagittal, 1=y tangential)
-        def best_focus_delta_z(ray, axis_idx: int):
-            # ray: after lens surfaces (image space)
-            # Vectorized intersection with planes z_grid
-            oz = ray.o[..., 2:3]
-            dz = ray.d[..., 2:3]
-            t = (z_grid.unsqueeze(0) - oz) / (dz + 1e-12)  # [N, Z]
+        delta_z_tan = []
 
-            oa = ray.o[..., axis_idx : axis_idx + 1]
-            da = ray.d[..., axis_idx : axis_idx + 1]
-            pos_axis = (oa + da * t).squeeze(-1)  # [N, Z]
+        for wvln in wvln_list:
+            # --- Batch ray construction for all field angles ---
+            # Pupil positions: shape [spp]
+            pupil_y = torch.linspace(-pupilr, pupilr, spp, device=device) * 0.99
 
-            w = ray.is_valid.unsqueeze(-1).float()  # [N, 1] -> [N, Z] by broadcast
-            pos_axis = pos_axis * w
-            w_sum = w.sum(0)  # [Z]
-            centroid = pos_axis.sum(0) / (w_sum + EPSILON)  # [Z]
-            ms = (((pos_axis - centroid.unsqueeze(0)) ** 2) * w).sum(0) / (
+            # Ray origins: shape [F, spp, 3] (meridional plane: x=0)
+            ray_o = torch.zeros(num_points, spp, 3, device=device)
+            ray_o[..., 1] = pupil_y.unsqueeze(0)  # y = pupil sample
+            ray_o[..., 2] = pupilz  # z = entrance pupil z
+
+            # Ray directions: shape [F, spp, 3] (meridional: dx=0)
+            fov_rad = rfov_samples * (np.pi / 180.0)  # [F]
+            sin_fov = torch.sin(fov_rad)  # [F]
+            cos_fov = torch.cos(fov_rad)  # [F]
+            ray_d = torch.zeros(num_points, spp, 3, device=device)
+            ray_d[..., 1] = sin_fov.unsqueeze(-1)  # [F, 1] -> [F, spp]
+            ray_d[..., 2] = cos_fov.unsqueeze(-1)
+
+            # Create batched ray and trace all field angles at once
+            ray = Ray(ray_o, ray_d, wvln=wvln, device=device)
+            ray, _ = self.trace(ray)
+
+            # --- Vectorized best-focus for all field angles ---
+            # ray.o: [F, spp, 3], ray.d: [F, spp, 3]
+            oz = ray.o[..., 2:3]  # [F, spp, 1]
+            dz = ray.d[..., 2:3]  # [F, spp, 1]
+            t = (z_grid.view(1, 1, -1) - oz) / (dz + EPSILON)  # [F, spp, Z]
+
+            oa = ray.o[..., 1:2]  # y-axis (tangential)
+            da = ray.d[..., 1:2]
+            pos_y = oa + da * t  # [F, spp, Z]
+
+            w = ray.is_valid.unsqueeze(-1).float()  # [F, spp, 1]
+            pos_y = pos_y * w  # mask invalid rays
+            w_sum = w.sum(dim=1)  # [F, 1]
+
+            centroid = pos_y.sum(dim=1) / (w_sum + EPSILON)  # [F, Z]
+            ms = (((pos_y - centroid.unsqueeze(1)) ** 2) * w).sum(dim=1) / (
                 w_sum + EPSILON
-            )  # [Z]
-            best_idx = torch.argmin(ms)
-            return (z_grid[best_idx] - d_sensor).item()
+            )  # [F, Z]
 
-        # Loop wavelengths and field angles
-        for w_idx, wvln in enumerate(wvln_list):
-            dz_tan = []
-            for i in range(len(rfov_samples)):
-                fov_deg = rfov_samples[i].item()
+            best_idx = torch.argmin(ms, dim=1)  # [F]
 
-                # Tangential (meridional plane: y-z plane -> minimize y spread)
-                ray_t = self.sample_parallel_2D(
-                    fov=fov_deg,
-                    num_rays=spp,
-                    wvln=wvln,
-                    plane="meridional",
-                    entrance_pupil=True,
+            # Warn if best focus hits z_span boundary
+            boundary_hit = (best_idx == 0) | (best_idx == z_steps - 1)
+            if boundary_hit.any():
+                n_boundary = boundary_hit.sum().item()
+                print(
+                    f"Warning: {n_boundary}/{num_points} field angles hit z_span "
+                    f"boundary. Consider increasing z_span (currently {z_span} mm)."
                 )
-                ray_t, _ = self.trace(ray_t)
-                dz_tan.append(best_focus_delta_z(ray_t, axis_idx=1))  # y-axis
 
-            delta_z_tan.append(np.asarray(dz_tan))
+            # Parabolic interpolation for sub-grid precision
+            idx_c = best_idx.clamp(1, z_steps - 2)  # avoid boundary
+            f_range = torch.arange(num_points, device=device)
+            y_l = ms[f_range, idx_c - 1]
+            y_c = ms[f_range, idx_c]
+            y_r = ms[f_range, idx_c + 1]
+            denom = 2.0 * (y_l - 2.0 * y_c + y_r)
+            shift = (y_l - y_r) / (denom + EPSILON)  # fractional index offset
+            shift = shift.clamp(-0.5, 0.5)  # safety clamp
+
+            z_step_size = (2.0 * z_span) / (z_steps - 1)
+            best_z = z_grid[idx_c] + shift * z_step_size  # [F]
+            dz_tan = (best_z - d_sensor).cpu().numpy()
+
+            # Mark fully-vignetted field angles as NaN (gaps in plot)
+            valid_count = w.sum(dim=1).squeeze(-1)  # [F]
+            fully_vignetted = (valid_count < 2).cpu().numpy()
+            dz_tan[fully_vignetted] = np.nan
+
+            delta_z_tan.append(dz_tan)
 
         # Plot
         fov_np = rfov_samples.detach().cpu().numpy()
         fig, ax = plt.subplots(figsize=(7, 6))
         ax.set_title("Field Curvature (Δz vs Field Angle)")
 
-        # Determine x range (tangential only)
         all_vals = np.abs(np.concatenate(delta_z_tan)) if len(delta_z_tan) > 0 else np.array([0.0])
         x_range = float(max(0.2, all_vals.max() * 1.2)) if all_vals.size > 0 else 0.2
 
@@ -813,7 +851,8 @@ class GeoLensEval:
     # ================================================================
     # Vignetting
     # ================================================================
-    def vignetting(self, depth=DEPTH, num_grid=64):
+    @torch.no_grad()
+    def vignetting(self, depth=DEPTH, num_grid=32, num_rays=512):
         """Compute relative illumination (vignetting) map.
 
         Measures the fraction of rays that successfully reach the sensor for each
@@ -821,14 +860,18 @@ class GeoLensEval:
 
         Args:
             depth (float, optional): Object distance. Defaults to DEPTH.
-            num_grid (int, optional): Grid resolution for field sampling. Defaults to 64.
+            num_grid (int, optional): Grid resolution for field sampling. Defaults to 32.
+            num_rays (int, optional): Number of rays per grid point. Defaults to 512.
 
         Returns:
             Tensor: Vignetting map with values in [0, 1]. Shape [num_grid, num_grid].
                 A value of 1.0 means no vignetting; 0.0 means fully vignetted.
         """
-        # Sample rays, shape [num_grid, num_grid, num_rays, 3]
-        ray = self.sample_grid_rays(depth=depth, num_grid=num_grid)
+        # Sample rays in uniform image space (not FOV angles) for correct sensor mapping
+        # shape [num_grid, num_grid, num_rays, 3]
+        ray = self.sample_grid_rays(
+            depth=depth, num_grid=num_grid, num_rays=num_rays, uniform_fov=False
+        )
 
         # Trace rays to sensor
         ray = self.trace2sensor(ray)
@@ -837,6 +880,7 @@ class GeoLensEval:
         vignetting = ray.is_valid.sum(-1) / (ray.is_valid.shape[-1])
         return vignetting
 
+    @torch.no_grad()
     def draw_vignetting(self, filename=None, depth=DEPTH, resolution=512, show=False):
         """Draw vignetting (relative illumination) map as a grayscale image.
 
@@ -859,12 +903,10 @@ class GeoLensEval:
             align_corners=False,
         ).squeeze()
 
-        # Scale vignetting to [0.5, 1] range
-        vignetting = 0.5 + 0.5 * vignetting
-
         fig, ax = plt.subplots()
-        im = ax.imshow(vignetting.cpu().numpy(), cmap="gray", vmin=0.5, vmax=1.0)
-        fig.colorbar(im, ax=ax, ticks=[0.5, 0.75, 1.0])
+        ax.set_title("Relative Illumination (Vignetting)")
+        im = ax.imshow(vignetting.cpu().numpy(), cmap="gray", vmin=0.0, vmax=1.0)
+        fig.colorbar(im, ax=ax, ticks=[0.0, 0.25, 0.5, 0.75, 1.0])
 
         if show:
             plt.show()
@@ -886,13 +928,6 @@ class GeoLensEval:
 
     def field_curvature(self):
         """Compute field curvature (best-focus defocus vs field angle).
-
-        Not yet implemented.
-        """
-        pass
-
-    def aberration_histogram(self):
-        """Compute aberration histogram (Seidel or Zernike decomposition).
 
         Not yet implemented.
         """
@@ -980,27 +1015,30 @@ class GeoLensEval:
                 return chief_ray_o, chief_ray_d
 
         # Extract non-zero rfov entries for processing
-        if torch.any(rfov == 0):
+        has_zero = torch.any(rfov == 0)
+        if has_zero:
+            start_idx = 1
             rfovs = rfov[1:]
             depths = depth[1:]
         else:
+            start_idx = 0
             rfovs = rfov
             depths = depth
 
         if self.aper_idx == 0:
             if plane == "sagittal":
-                chief_ray_o[1:, ...] = torch.stack(
+                chief_ray_o[start_idx:, ...] = torch.stack(
                     [depths * torch.tan(rfovs), torch.zeros_like(rfovs), depths], dim=-1
                 )
-                chief_ray_d[1:, ...] = torch.stack(
+                chief_ray_d[start_idx:, ...] = torch.stack(
                     [torch.sin(rfovs), torch.zeros_like(rfovs), torch.cos(rfovs)],
                     dim=-1,
                 )
             else:
-                chief_ray_o[1:, ...] = torch.stack(
+                chief_ray_o[start_idx:, ...] = torch.stack(
                     [torch.zeros_like(rfovs), depths * torch.tan(rfovs), depths], dim=-1
                 )
-                chief_ray_d[1:, ...] = torch.stack(
+                chief_ray_d[start_idx:, ...] = torch.stack(
                     [torch.zeros_like(rfovs), torch.sin(rfovs), torch.cos(rfovs)],
                     dim=-1,
                 )
@@ -1008,27 +1046,28 @@ class GeoLensEval:
             return chief_ray_o, chief_ray_d
 
         # Scale factor
-        pupilz, _ = self.calc_entrance_pupil()
+        pupilz, pupilr = self.calc_entrance_pupil()
         y_distance = torch.tan(rfovs) * (abs(depths) + pupilz)
 
         if ray_aiming:
             scale = 0.05
-            delta = scale * y_distance
+            min_delta = 0.05 * pupilr  # minimum search range based on pupil radius
+            delta = torch.clamp(scale * y_distance, min=min_delta)
 
         if not ray_aiming:
             if plane == "sagittal":
-                chief_ray_o[1:, ...] = torch.stack(
+                chief_ray_o[start_idx:, ...] = torch.stack(
                     [-y_distance, torch.zeros_like(rfovs), depths], dim=-1
                 )
-                chief_ray_d[1:, ...] = torch.stack(
+                chief_ray_d[start_idx:, ...] = torch.stack(
                     [torch.sin(rfovs), torch.zeros_like(rfovs), torch.cos(rfovs)],
                     dim=-1,
                 )
             else:
-                chief_ray_o[1:, ...] = torch.stack(
+                chief_ray_o[start_idx:, ...] = torch.stack(
                     [torch.zeros_like(rfovs), -y_distance, depths], dim=-1
                 )
-                chief_ray_d[1:, ...] = torch.stack(
+                chief_ray_d[start_idx:, ...] = torch.stack(
                     [torch.zeros_like(rfovs), torch.sin(rfovs), torch.cos(rfovs)],
                     dim=-1,
                 )
@@ -1063,19 +1102,19 @@ class GeoLensEval:
             # Look for the ray that is closest to the optical axis
             if plane == "sagittal":
                 _, center_idx = torch.min(torch.abs(ray.o[..., 0]), dim=1)
-                chief_ray_o[1:, ...] = inc_ray.o[
+                chief_ray_o[start_idx:, ...] = inc_ray.o[
                     torch.arange(len(rfovs)), center_idx.long(), ...
                 ]
-                chief_ray_d[1:, ...] = torch.stack(
+                chief_ray_d[start_idx:, ...] = torch.stack(
                     [torch.sin(rfovs), torch.zeros_like(rfovs), torch.cos(rfovs)],
                     dim=-1,
                 )
             else:
                 _, center_idx = torch.min(torch.abs(ray.o[..., 1]), dim=1)
-                chief_ray_o[1:, ...] = inc_ray.o[
+                chief_ray_o[start_idx:, ...] = inc_ray.o[
                     torch.arange(len(rfovs)), center_idx.long(), ...
                 ]
-                chief_ray_d[1:, ...] = torch.stack(
+                chief_ray_d[start_idx:, ...] = torch.stack(
                     [torch.zeros_like(rfovs), torch.sin(rfovs), torch.cos(rfovs)],
                     dim=-1,
                 )
@@ -1093,7 +1132,6 @@ class GeoLensEval:
         depth=DEPTH,
         spp=SPP_RENDER,
         unwarp=False,
-        noise=0.0,
         method="ray_tracing",
         show=False,
     ):
@@ -1105,7 +1143,6 @@ class GeoLensEval:
             depth (float, optional): Depth of object image. Defaults to DEPTH.
             spp (int, optional): Sample per pixel. Defaults to SPP_RENDER.
             unwarp (bool, optional): If True, unwarp the image to correct distortion. Defaults to False.
-            noise (float, optional): Gaussian noise standard deviation. Defaults to 0.0.
             method (str, optional): Rendering method ('ray_tracing', etc.). Defaults to 'ray_tracing'.
             show (bool, optional): If True, display the rendered image. Defaults to False.
 
@@ -1125,11 +1162,6 @@ class GeoLensEval:
 
         # Image rendering
         img_render = self.render(img, depth=depth, method=method, spp=spp)
-
-        # Add noise (a very simple Gaussian noise model)
-        if noise > 0:
-            img_render = img_render + torch.randn_like(img_render) * noise
-            img_render = torch.clamp(img_render, 0, 1)
 
         # Compute PSNR and SSIM
         img_np = img.squeeze(0).permute(1, 2, 0).cpu().numpy()
@@ -1170,6 +1202,7 @@ class GeoLensEval:
 
         return img_render
 
+    @torch.no_grad()
     def analysis_spot(self, num_field=3, depth=float("inf")):
         """Compute sensor plane ray spot RMS error and radius.
 
@@ -1329,6 +1362,5 @@ class GeoLensEval:
                 spp=SPP_RENDER,
                 unwarp=render_unwarp,
                 save_name=f"{save_name}_render",
-                noise=0.01,
                 show=show,
             )

@@ -212,8 +212,6 @@ class Lens(DeepObj):
 
         # Use quater of the sensor plane to save memory
         if quater:
-            z = torch.full_like(x, depth)
-            point_source = torch.stack([x, y, z], dim=-1)
             bound_i = grid[0] // 2 if grid[0] % 2 == 0 else grid[0] // 2 + 1
             bound_j = grid[1] // 2
             point_source = point_source[0:bound_i, bound_j:, :]
