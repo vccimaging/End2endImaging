@@ -230,44 +230,53 @@ class Aspheric(Surface):
     ):
         """Get optimizer parameters for different parameters.
 
-        Args:
-            lrs (list, optional): learning rates for d, c, k, ai4, (ai6, ai8, ...).
-            optim_mat (bool, optional): whether to optimize material. Defaults to False.
-        """
-        # Broadcast learning rates to all aspheric coefficients
-        if len(lrs) == 4:
-            lrs = lrs + [
-                lrs[-1] * decay ** (ai_degree + 1)
-                for ai_degree in range(self.ai_degree - 1)
-            ]
+        The learning rate for each aspheric coefficient ``a_{2n}`` is scaled
+        by ``1 / max(r, 1)^{2n}`` so that the effective sag perturbation per
+        Adam step is approximately constant (~lr_base mm) regardless of
+        surface semi-diameter.  Without this normalisation, gradients scale
+        as ``O(r^{2n})`` and can reach ``10^5`` for camera-sized surfaces,
+        causing NaN within a few dozen iterations.
 
+        The ``decay`` parameter is **not** applied on top of the r-scaling,
+        because ``1/r^{2n}`` already normalises across orders (matching
+        ``AsphericNorm`` behaviour where all orders share the same lr).
+
+        Args:
+            lrs (list, optional): learning rates for ``[d, c, k, ai]``.
+            decay (float, optional): kept for API compatibility but unused
+                when r-normalisation is active.
+            optim_mat (bool, optional): whether to optimize material.
+                Defaults to False.
+        """
         params = []
-        param_idx = 0
 
         # Optimize distance
         self.d.requires_grad_(True)
-        params.append({"params": [self.d], "lr": lrs[param_idx]})
-        param_idx += 1
+        params.append({"params": [self.d], "lr": lrs[0]})
 
         # Optimize curvature
         self.c.requires_grad_(True)
-        params.append({"params": [self.c], "lr": lrs[param_idx]})
-        param_idx += 1
+        params.append({"params": [self.c], "lr": lrs[1]})
 
         # Optimize conic constant
         self.k.requires_grad_(True)
-        params.append({"params": [self.k], "lr": lrs[param_idx]})
-        param_idx += 1
+        params.append({"params": [self.k], "lr": lrs[2]})
 
-        # Optimize aspheric coefficients
+        # Optimize aspheric coefficients with r-normalised learning rates.
+        # Gradient of sag w.r.t. a_{2n} scales as r^{2n}.  Dividing the lr
+        # by r^{2n} keeps the effective sag change per step ≈ lr_base,
+        # so every order contributes equally to surface shape evolution.
         if self.ai is not None:
             if self.ai_degree > 0:
+                r_norm = max(self.r, 1.0)
+                lr_base = lrs[3] if len(lrs) > 3 else 1e-4
                 for i in range(self.ai_degree):
                     p_name = f"ai{2 * (i + 2)}"
                     p = getattr(self, p_name)
                     p.requires_grad_(True)
-                    params.append({"params": [p], "lr": lrs[param_idx]})
-                    param_idx += 1
+                    order = 2 * (i + 2)  # 4, 6, 8, 10, ...
+                    lr_ai = lr_base / r_norm**order
+                    params.append({"params": [p], "lr": lr_ai})
 
         # Optimize material parameters
         if optim_mat and self.mat2.get_name() != "air":
