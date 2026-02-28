@@ -27,9 +27,6 @@ from ..material import Material
 
 logger = logging.getLogger(__name__)
 
-# Aspheric surface types (both have c, k, ai attributes)
-_ASPHERIC_TYPES = (Aspheric,)
-
 
 def _get_c(surf) -> float:
     """Return float curvature for any surface type (0.0 for flat surfaces)."""
@@ -252,7 +249,7 @@ class GeoLensSeidel:
                 S5[j] = 0.0
 
             # --- Aspheric correction ---
-            if isinstance(surf, _ASPHERIC_TYPES):
+            if isinstance(surf, Aspheric):
                 k_val = float(surf.k) if hasattr(surf.k, 'item') else float(surf.k)
                 c_val = c[j]
                 # Fourth-order deformation: b4 = k*c^3/8 + a4
