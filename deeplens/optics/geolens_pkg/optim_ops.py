@@ -398,7 +398,7 @@ class GeoLensSurfOps:
         Args:
             expand_factor (float, optional): Fractional expansion applied to
                 the ray-traced clear aperture radius.  Auto-selected if None:
-                5 % for cellphone lenses (r_sensor < 10 mm), 10 % otherwise.
+                10 % for all lenses.
             mounting_margin (float, optional): Absolute margin [mm] added to
                 the clear aperture for mechanical mounting.  When given, this
                 replaces the proportional ``expand_factor`` expansion.
@@ -407,10 +407,8 @@ class GeoLensSurfOps:
         num_surfs = len(self.surfaces)
 
         # Set expansion factor
-        if self.r_sensor < 10.0:
-            expand_factor = 0.05 if expand_factor is None else expand_factor
-        else:
-            expand_factor = 0.10 if expand_factor is None else expand_factor
+        if expand_factor is None:
+            expand_factor = 0.10
 
         # ------------------------------------------------------------------
         # 1. Temporarily remove radius limits so the trace is unclipped
@@ -430,8 +428,8 @@ class GeoLensSurfOps:
             print(f"Using fov_deg: {fov_deg} during surface pruning.")
 
         fov_y = [f * fov_deg / 10 for f in range(0, 11)]
-        ray = self.sample_parallel(
-            fov_x=[0.0], fov_y=fov_y, num_rays=SPP_CALC, scale_pupil=1.5
+        ray = self.sample_from_fov(
+            fov_x=[0.0], fov_y=fov_y, num_rays=SPP_CALC, scale_pupil=1.0
         )
         _, ray_o_record = self.trace2sensor(ray=ray, record=True)
 
@@ -471,61 +469,7 @@ class GeoLensSurfOps:
                     self.surfaces[i].update_r(self.surfaces[i].r + r_expand)
 
         # ------------------------------------------------------------------
-        # 4. Edge thickness enforcement
-        #    For each glass element (pair of surfaces bounding glass), ensure
-        #    the edge thickness at the pruned radius is at least the minimum.
-        #    If violated, shrink the clear aperture of both surfaces.
-        # ------------------------------------------------------------------
-        if self.r_sensor < 10.0:
-            et_min = 0.25  # mm, cellphone lens
-        else:
-            et_min = 1.0  # mm, camera lens
-
-        for i in range(num_surfs - 1):
-            # Glass element: surface i has a non-air material on its back side
-            if self.surfaces[i].mat2.name == "air":
-                continue
-            if isinstance(self.surfaces[i], Aperture):
-                continue
-
-            front = self.surfaces[i]
-            back = self.surfaces[i + 1]
-            r_check = min(front.r, back.r)
-
-            if r_check <= 0:
-                continue
-
-            r_t = torch.tensor(r_check, device=self.device)
-            z_front = front.surface_with_offset(r_t, 0.0, valid_check=False).item()
-            z_back = back.surface_with_offset(r_t, 0.0, valid_check=False).item()
-            edge_thickness = z_back - z_front
-
-            if edge_thickness < et_min:
-                # Shrink radius until edge thickness is met (binary search)
-                r_lo, r_hi = 0.0, r_check
-                for _ in range(20):
-                    r_mid = (r_lo + r_hi) / 2
-                    r_t = torch.tensor(r_mid, device=self.device)
-                    z_f = front.surface_with_offset(r_t, 0.0, valid_check=False).item()
-                    z_b = back.surface_with_offset(r_t, 0.0, valid_check=False).item()
-                    if (z_b - z_f) >= et_min:
-                        r_lo = r_mid
-                    else:
-                        r_hi = r_mid
-
-                r_safe = r_lo
-                if r_safe > 0 and r_safe < r_check:
-                    print(
-                        f"Surf {i}-{i+1}: edge thickness {edge_thickness:.3f} mm "
-                        f"< {et_min} mm, shrinking radius {r_check:.3f} -> {r_safe:.3f} mm."
-                    )
-                    if front.r > r_safe:
-                        front.update_r(r_safe)
-                    if back.r > r_safe:
-                        back.update_r(r_safe)
-
-        # ------------------------------------------------------------------
-        # 5. Air gap clearance check
+        # 4. Air gap clearance check
         #    For each air gap (surface i with mat2 = "air"), ensure that
         #    surfaces do not physically intersect at the clear aperture edge.
         # ------------------------------------------------------------------
