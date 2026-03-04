@@ -100,7 +100,7 @@ class GeoLensOptim:
             self.thick_max_edge = 2.0
             self.thick_max_center = 3.0
             self.bfl_max = 3.0
-            self.ttl_max = 8.0
+            self.ttl_max = 15.0
 
             # Surface shape constraints
             self.sag2diam_max = 0.1
