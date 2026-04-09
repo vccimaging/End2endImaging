@@ -168,6 +168,45 @@ class Binary2Phase(Phase):
         self.order10 = ckpt["order10"].to(self.device)
         self.order12 = ckpt["order12"].to(self.device)
 
+    def zmx_str(self, surf_idx, d_next):
+        """Return Zemax BINARY_2 surface string.
+
+        PARM 1–8 are set to zero (flat substrate, no aspheric sag) so that
+        Zemax interprets the XDAT entries purely as phase polynomial
+        coefficients.
+        """
+        coeffs = [
+            self.order2.item(),
+            self.order4.item(),
+            self.order6.item(),
+            self.order8.item(),
+            self.order10.item(),
+            self.order12.item(),
+        ]
+        n_terms = len(coeffs)
+
+        # Build XDAT block: term count, norm radius, then coefficients
+        xdat_str = f"    XDAT 1 {n_terms} 0 0\n"
+        xdat_str += f"    XDAT 2 {self.norm_radii} 0 0\n"
+        for j, coeff in enumerate(coeffs, start=3):
+            xdat_str += f"    XDAT {j} {coeff} 0 0\n"
+
+        zmx_str = f"""SURF {surf_idx}
+    TYPE BINARY_2
+    CURV 0.0
+    DISZ {d_next.item()}
+    DIAM {self.r} 1 0 0 1 ""
+    PARM 1 0
+    PARM 2 0
+    PARM 3 0
+    PARM 4 0
+    PARM 5 0
+    PARM 6 0
+    PARM 7 0
+    PARM 8 0
+{xdat_str}"""
+        return zmx_str
+
     def surf_dict(self):
         """Return surface parameters."""
         surf_dict = {

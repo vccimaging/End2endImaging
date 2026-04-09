@@ -375,8 +375,8 @@ class Aspheric(Surface):
         for i in range(self.ai_degree):
             abs_ai.append(getattr(self, f"ai{2 * (i + 2)}").item())
 
-        # Pad with zeros for Zemax PARM format (needs 6 PARMs)
-        while len(abs_ai) < 6:
+        # Pad with zeros for Zemax PARM format (needs 8 PARMs for a2–a16)
+        while len(abs_ai) < 8:
             abs_ai.append(0.0)
 
         if self.mat2.get_name() == "air":
@@ -392,6 +392,8 @@ class Aspheric(Surface):
     PARM 4 {abs_ai[3]}
     PARM 5 {abs_ai[4]}
     PARM 6 {abs_ai[5]}
+    PARM 7 {abs_ai[6]}
+    PARM 8 {abs_ai[7]}
 """
         else:
             zmx_str = f"""SURF {surf_idx}
@@ -407,5 +409,7 @@ class Aspheric(Surface):
     PARM 4 {abs_ai[3]}
     PARM 5 {abs_ai[4]}
     PARM 6 {abs_ai[5]}
+    PARM 7 {abs_ai[6]}
+    PARM 8 {abs_ai[7]}
 """
         return zmx_str
