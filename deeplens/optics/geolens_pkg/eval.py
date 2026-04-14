@@ -1662,15 +1662,15 @@ class GeoLensEval:
                 - **chief_ray_d**: Unit directions, shape ``[N, 3]``.
         """
         if isinstance(rfov, float) and rfov > 0:
-            rfov = torch.linspace(0, rfov, 2)
+            rfov = torch.linspace(0, rfov, 2, device=self.device)
         rfov = rfov.to(self.device)
 
         if not isinstance(depth, torch.Tensor):
             depth = torch.tensor(depth, device=self.device).repeat(len(rfov))
 
         # set chief ray
-        chief_ray_o = torch.zeros([len(rfov), 3]).to(self.device)
-        chief_ray_d = torch.zeros([len(rfov), 3]).to(self.device)
+        chief_ray_o = torch.zeros([len(rfov), 3], device=self.device)
+        chief_ray_d = torch.zeros([len(rfov), 3], device=self.device)
 
         # Convert rfov to radian
         rfov = rfov * torch.pi / 180.0
@@ -1749,12 +1749,12 @@ class GeoLensEval:
             t = torch.linspace(0, 1, num_rays, device=min_y.device)
             o1_linspace = min_y.unsqueeze(-1) + t * (max_y - min_y).unsqueeze(-1)
 
-            o1 = torch.zeros([len(rfovs), num_rays, 3])
+            o1 = torch.zeros([len(rfovs), num_rays, 3], device=self.device)
             o1[:, :, 2] = depths[0]
 
             o2_linspace = -delta.unsqueeze(-1) + t * (2 * delta).unsqueeze(-1)
 
-            o2 = torch.zeros([len(rfovs), num_rays, 3])
+            o2 = torch.zeros([len(rfovs), num_rays, 3], device=self.device)
             o2[:, :, 2] = pupilz
 
             if plane == "sagittal":

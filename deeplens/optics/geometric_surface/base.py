@@ -660,8 +660,8 @@ class Surface(DeepObj):
 
         This function is used in lens setup plotting and lens self-intersection detection.
         """
-        x = x if torch.is_tensor(x) else torch.tensor(x).to(self.device)
-        y = y if torch.is_tensor(y) else torch.tensor(y).to(self.device)
+        x = x if torch.is_tensor(x) else torch.tensor(x, device=self.device)
+        y = y if torch.is_tensor(y) else torch.tensor(y, device=self.device)
         if valid_check:
             return self.sag(x, y) + self.d
         else:
@@ -672,8 +672,8 @@ class Surface(DeepObj):
 
         This function is currently not used.
         """
-        x = x if torch.is_tensor(x) else torch.tensor(x).to(self.device)
-        y = y if torch.is_tensor(y) else torch.tensor(y).to(self.device)
+        x = x if torch.is_tensor(x) else torch.tensor(x, device=self.device)
+        y = y if torch.is_tensor(y) else torch.tensor(y, device=self.device)
         return self.sag(x, y).item()
 
     # =====================================================================

@@ -1355,12 +1355,12 @@ class GeoLens(
             aper_r = aper_surf.r
 
         if paraxial:
-            ray_o = torch.tensor([[DELTA_PARAXIAL, 0, aper_z]]).repeat(32, 1)
-            phi = torch.linspace(-0.01, 0.01, 32)
+            ray_o = torch.tensor([[DELTA_PARAXIAL, 0, aper_z]], device=self.device).repeat(32, 1)
+            phi = torch.linspace(-0.01, 0.01, 32, device=self.device)
         else:
-            ray_o = torch.tensor([[aper_r, 0, aper_z]]).repeat(SPP_CALC, 1)
+            ray_o = torch.tensor([[aper_r, 0, aper_z]], device=self.device).repeat(SPP_CALC, 1)
             rfov = float(np.arctan(self.r_sensor / self.foclen))
-            phi = torch.linspace(-rfov / 2, rfov / 2, SPP_CALC)
+            phi = torch.linspace(-rfov / 2, rfov / 2, SPP_CALC, device=self.device)
 
         d = torch.stack(
             (torch.sin(phi), torch.zeros_like(phi), -torch.cos(phi)), axis=-1
