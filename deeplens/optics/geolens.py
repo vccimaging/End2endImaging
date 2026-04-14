@@ -1134,8 +1134,11 @@ class GeoLens(
         Calculates FoV using two methods:
             1. **Perspective projection** — from focal length and sensor size
                (effective FoV, ignoring distortion).
-            2. **Ray tracing** — traces rays from the sensor edge backwards to
-               determine the real FoV including distortion effects.
+            2. **Forward ray tracing** — sweeps FOV angles from object side,
+               traces to sensor, and finds the angle whose centroid image height
+               matches the sensor half-diagonal. This avoids the failure of the
+               old backward-tracing approach on wide-angle lenses where pupil
+               aberration at full field leaves zero valid rays.
 
         Updates:
             self.vfov (float): Vertical FoV in radians.
@@ -1158,36 +1161,37 @@ class GeoLens(
         self.dfov = 2 * math.atan(self.r_sensor / self.foclen)
         self.rfov_eff = self.dfov / 2  # effective (paraxial) half-diagonal FoV
 
-        # 2. Ray tracing to calculate real FoV (distortion-affected FoV)
-        # Sample rays from edge of sensor, shape [SPP_CALC, 3]
-        o1 = torch.zeros([SPP_CALC, 3])
-        o1 = torch.tensor([self.r_sensor, 0, self.d_sensor.item()]).repeat(SPP_CALC, 1)
+        # 2. Forward ray tracing to calculate real FoV (distortion-affected)
+        # Sweep FOV angles from object side, trace to sensor, and find which
+        # angle produces an image height matching r_sensor.
+        num_fov = 64
+        fov_lo = float(np.rad2deg(self.rfov_eff)) * 0.5
+        fov_hi = min(float(np.rad2deg(self.rfov_eff)) * 1.8, 89.0)
+        fov_samples = torch.linspace(fov_lo, fov_hi, num_fov, device=self.device)
 
-        # Sample second points on exit pupil
-        pupilz, pupilx = self.get_exit_pupil()
-        x2 = torch.linspace(-pupilx, pupilx, SPP_CALC)
-        z2 = torch.full_like(x2, pupilz)
-        y2 = torch.full_like(x2, 0)
-        o2 = torch.stack((x2, y2, z2), axis=-1)
+        ray = self.sample_from_fov(
+            fov_x=0.0, fov_y=fov_samples.tolist(), num_rays=256
+        )
+        ray = self.trace2sensor(ray)
 
-        # Ray tracing to object space
-        ray = Ray(o1, o2 - o1, device=self.device)
-        ray = self.trace2obj(ray)
+        # Centroid image height per FOV angle, shape [num_fov]
+        valid = ray.is_valid > 0  # [num_fov, num_rays]
+        masked_y = ray.o[..., 1] * valid
+        n_valid = valid.sum(dim=-1).clamp(min=1)
+        imgh = (masked_y.sum(dim=-1) / n_valid).abs()
 
-        # Compute output ray angle
-        tan_rfov = ray.d[..., 0] / ray.d[..., 2]
-        rfov = torch.atan(torch.sum(tan_rfov * ray.is_valid) / torch.sum(ray.is_valid))
-
-        # If calculation failed, use pinhole camera model to compute fov
-        if torch.isnan(rfov):
+        # Find the FOV angle whose image height is closest to r_sensor
+        has_valid = valid.sum(dim=-1) > 10
+        if has_valid.any():
+            imgh[~has_valid] = float("inf")
+            diff = (imgh - self.r_sensor).abs()
+            best_idx = diff.argmin().item()
+            rfov = fov_samples[best_idx].item() * math.pi / 180.0
+            self.rfov = rfov
+            self.real_dfov = 2 * rfov
+        else:
             self.rfov = self.rfov_eff
             self.real_dfov = self.dfov
-            print(
-                f"Failed to calculate distorted FoV by ray tracing, use effective FoV {self.rfov_eff} rad."
-            )
-        else:
-            self.rfov = rfov.item()
-            self.real_dfov = 2 * rfov.item()
 
         # 3. Compute 35mm equivalent focal length. 35mm sensor: 36mm * 24mm
         self.eqfl = 21.63 / math.tan(self.rfov_eff)
