@@ -1,9 +1,9 @@
-site_name: DeepLens
-site_description: "Differentiable optical lens simulator for end-to-end camera system design with PyTorch"
+site_name: End2endImaging
+site_description: "End-to-end differentiable simulation framework for computational imaging"
 site_author: "Xinge Yang"
-site_url: https://vccimaging.github.io/DeepLens/
-repo_url: https://github.com/singer-yang/DeepLens
-repo_name: singer-yang/DeepLens
+site_url: https://vccimaging.github.io/End2endImaging/
+repo_url: https://github.com/vccimaging/End2endImaging
+repo_name: vccimaging/End2endImaging
 
 docs_dir: docs
 
@@ -11,23 +11,43 @@ theme:
   name: material
   logo: assets/logo.png
   favicon: assets/logo.png
+  font:
+    text: Outfit
+    code: JetBrains Mono
   palette:
-    - scheme: default
-      primary: indigo
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: amber
       toggle:
-        icon: material/brightness-7
+        icon: material/weather-sunny
         name: Switch to dark mode
-    - scheme: slate
-      primary: indigo
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: amber
       toggle:
-        icon: material/brightness-4
+        icon: material/weather-night
         name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+    admonition:
+      note: fontawesome/solid/note-sticky
   features:
+    - content.tabs.link
     - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.sections
     - navigation.top
+    - navigation.instant
+    - navigation.tracking
+    - navigation.footer
     - search.highlight
+    - search.suggest
     - content.code.copy
+    - content.code.annotate
+    - toc.follow
+    - header.autohide
 
 plugins:
   - search
@@ -47,19 +67,39 @@ plugins:
 markdown_extensions:
   - admonition
   - pymdownx.details
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.highlight:
       anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
   - pymdownx.arithmatex:
       generic: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
   - tables
   - attr_list
+  - md_in_html
+  - def_list
+  - toc:
+      permalink: true
 
 extra_css:
-  - stylesheets/api.css
+  - stylesheets/extra.css
 
 extra_javascript:
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/vccimaging/End2endImaging
 
 nav:
   - Home:
@@ -68,7 +108,7 @@ nav:
       - Quickstart: quickstart.md
       - Architecture: architecture.md
   - API Reference:
-      - Optics: api/optics.md
+      - DeepLens: api/optics.md
       - Sensor: api/sensor.md
       - Network: api/network.md
       - Camera: api/camera.md
