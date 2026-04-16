@@ -1,9 +1,18 @@
 # End2endImaging
 
-**End2endImaging** is an end-to-end differentiable computational imaging framework. It models the full camera pipeline — optics, sensor, and image processing — as a single differentiable computation graph built on PyTorch, enabling joint optimization of hardware and algorithms.
+<p align="center">
+    <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white" alt="Python"></a>
+    <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.0+-ee4c2c?logo=pytorch&logoColor=white" alt="PyTorch"></a>
+    <a href="https://www.nature.com/articles/s41467-024-50835-7"><img src="https://img.shields.io/badge/NatComm-2024-orange" alt="Nature Communications 2024"></a>
+    <a href="https://github.com/vccimaging/End2endImaging/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-green" alt="License"></a>
+</p>
+
+**End2endImaging** is an open-source framework for **end-to-end differentiable computational imaging**. It models the full camera pipeline — differentiable optics, sensor simulation, and neural image processing — as a single computation graph in PyTorch, enabling **optics-algorithm co-design** through gradient-based optimization.
+
+Use End2endImaging for **end-to-end optics design**, **automated lens design**, **differentiable ray tracing**, **computational photography**, and **optics-network co-optimization**.
 
 <div style="text-align:center;">
-    <img src="assets/pipeline.jpg"/>
+    <img src="assets/pipeline.jpg" alt="End2endImaging pipeline: differentiable optics, sensor simulation, and neural network for end-to-end computational imaging"/>
 </div>
 
 <p align="center">
@@ -18,7 +27,7 @@
 
 The core of End2endImaging is the `Camera` class, which composes a lens model and a sensor into a fully differentiable imaging pipeline. Gradients flow from downstream task losses (reconstruction, detection, classification) back through the neural network, sensor noise model, ISP, and into the optical design parameters — enabling hardware-software co-optimization.
 
-#### DeepLens: Differentiable Optics
+#### [DeepLens](https://github.com/vccimaging/DeepLens): Differentiable Optics
 
 The [`deeplens/`](end2end_imaging/deeplens/) module provides differentiable lens models for optical simulation and design:
 
@@ -41,45 +50,45 @@ Built-in reconstruction networks (NAFNet, UNet, Restormer) for restoring clean i
 
 ## Applications
 
-#### 1. End-to-End Camera Design
+#### 1. End-to-End Optics-Algorithm Co-Design
 
-Jointly optimize lens optics and neural reconstruction using final image quality (or classification/detection/segmentation) as the objective.
+Jointly optimize lens optics and neural reconstruction networks using final image quality (or classification/detection/segmentation) as the training objective. Gradients flow end-to-end from task loss into optical design parameters.
 
 [![paper](https://img.shields.io/badge/NatComm-2024-orange)](https://www.nature.com/articles/s41467-024-50835-7)
 
 <div align="center">
-    <img src="assets/end2end.png" alt="End2End" height="150px"/>
+    <img src="assets/end2end.png" alt="End-to-end optics-algorithm co-design: jointly optimizing lens and neural network" height="150px"/>
 </div>
 
 #### 2. Automated Lens Design
 
-Fully automated lens design from scratch using curriculum learning and differentiable optimization. Try it with [AutoLens](https://github.com/vccimaging/AutoLens)!
+Fully automated lens design from scratch using curriculum learning and differentiable optimization. Design camera lenses, cellphone lenses, and AR/VR optics with gradient descent. Try it with [AutoLens](https://github.com/vccimaging/AutoLens)!
 
 [![paper](https://img.shields.io/badge/NatComm-2024-orange)](https://www.nature.com/articles/s41467-024-50835-7) [![quickstart](https://img.shields.io/badge/Project-green)](https://github.com/vccimaging/AutoLens)
 
 <div align="center">
-    <img src="assets/autolens1.gif" alt="AutoLens" height="270px"/>
-    <img src="assets/autolens2.gif" alt="AutoLens" height="270px"/>
+    <img src="assets/autolens1.gif" alt="Automated lens design optimization with differentiable ray tracing" height="270px"/>
+    <img src="assets/autolens2.gif" alt="Curriculum learning for ab initio lens design" height="270px"/>
 </div>
 
 #### 3. Hybrid Refractive-Diffractive Lens Design
 
-Design hybrid refractive-diffractive lenses with a new ray-wave model.
+Design hybrid refractive-diffractive lenses (DOEs, metalenses) with a differentiable ray-wave model combining geometric ray tracing and wave optics propagation.
 
 [![report](https://img.shields.io/badge/SiggraphAsia-2024-orange)](https://arxiv.org/abs/2406.00834)
 
 <div align="center">
-    <img src="assets/hybridlens.png" alt="HybridLens" height="200px"/>
+    <img src="assets/hybridlens.png" alt="Hybrid refractive-diffractive lens design with differentiable ray-wave simulation" height="200px"/>
 </div>
 
 #### 4. Implicit Lens Representation
 
-A surrogate network for fast (aberration + defocus) image simulation.
+Neural surrogate network for fast aberration-aware image simulation, enabling real-time PSF prediction for computational photography applications.
 
 [![paper](https://img.shields.io/badge/TPAMI-2023-orange)](https://ieeexplore.ieee.org/document/10209238) [![link](https://img.shields.io/badge/Project-green)](https://github.com/vccimaging/Aberration-Aware-Depth-from-Focus)
 
 <div align="center">
-    <img src="assets/implicit_net.png" alt="Implicit" height="150px"/>
+    <img src="assets/implicit_net.png" alt="Neural implicit lens representation for fast PSF prediction" height="150px"/>
 </div>
 
 ## Installation
@@ -157,3 +166,7 @@ If you use this project in your research, please cite the paper. See more in [Hi
   publisher={Nature Publishing Group UK London}
 }
 ```
+
+---
+
+<sub>**Keywords:** end-to-end optics design, computational imaging, differentiable optics, differentiable ray tracing, optics-algorithm co-design, computational photography, automated lens design, optical simulation, PSF simulation, image signal processing, diffractive optics, wave optics, PyTorch optics, camera simulation, inverse optical design</sub>
