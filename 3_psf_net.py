@@ -7,7 +7,7 @@ Technical Paper:
 import os
 from datetime import datetime
 
-from end2end_imaging.optics import PSFNetLens
+from end2end_imaging.deeplens import PSFNetLens
 from end2end_imaging.utils import set_logger
 
 result_dir = "./results/" + datetime.now().strftime("%m%d-%H%M%S") + "-PSFNet"

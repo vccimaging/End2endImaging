@@ -1,4 +1,4 @@
-"""Tests for end2end_imaging/optics/diffraclens.py — DiffractiveLens."""
+"""Tests for end2end_imaging/deeplens/diffraclens.py — DiffractiveLens."""
 
 import pytest
 import torch

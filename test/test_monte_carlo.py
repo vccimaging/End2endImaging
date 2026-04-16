@@ -1,12 +1,12 @@
 """
-Tests for end2end_imaging/optics/imgsim/monte_carlo.py - Monte Carlo ray integration.
+Tests for end2end_imaging/deeplens/imgsim/monte_carlo.py - Monte Carlo ray integration.
 """
 
 import pytest
 import torch
 
-from end2end_imaging.optics.imgsim import forward_integral, assign_points_to_pixels
-from end2end_imaging.optics.light import Ray
+from end2end_imaging.deeplens.imgsim import forward_integral, assign_points_to_pixels
+from end2end_imaging.deeplens.light import Ray
 
 
 class TestForwardIntegral:

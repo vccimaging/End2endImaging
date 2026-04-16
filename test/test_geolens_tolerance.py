@@ -1,4 +1,4 @@
-"""Tests for end2end_imaging/optics/geolens_pkg/eval_tolerance.py — GeoLensTolerance mixin."""
+"""Tests for end2end_imaging/deeplens/geolens_pkg/eval_tolerance.py — GeoLensTolerance mixin."""
 
 import numpy as np
 import pytest

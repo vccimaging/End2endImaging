@@ -7,7 +7,7 @@ import pytest
 import torch
 
 from end2end_imaging import GeoLens
-from end2end_imaging.optics.config import DEPTH, DEFAULT_WAVE
+from end2end_imaging.deeplens.config import DEPTH, DEFAULT_WAVE
 
 
 class TestGeoLensLoading:

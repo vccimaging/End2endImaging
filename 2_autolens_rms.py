@@ -16,9 +16,9 @@ import torch
 import yaml
 from tqdm import tqdm
 
-from end2end_imaging.optics import GeoLens
-from end2end_imaging.optics.geolens_pkg import create_lens
-from end2end_imaging.optics.config import DEPTH, EPSILON, WAVE_RGB
+from end2end_imaging.deeplens import GeoLens
+from end2end_imaging.deeplens.geolens_pkg import create_lens
+from end2end_imaging.deeplens.config import DEPTH, EPSILON, WAVE_RGB
 from end2end_imaging.utils import create_video_from_images, set_logger, set_seed
 
 

@@ -15,8 +15,8 @@ import yaml
 from torchvision.utils import save_image
 from tqdm import tqdm
 
-from end2end_imaging.optics import HybridLens
-from end2end_imaging.optics.loss import PSFLoss
+from end2end_imaging.deeplens import HybridLens
+from end2end_imaging.deeplens.loss import PSFLoss
 from end2end_imaging.utils import set_logger, set_seed
 
 

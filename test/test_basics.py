@@ -7,8 +7,8 @@ import torch
 
 
 from end2end_imaging import init_device
-from end2end_imaging.optics.base import DeepObj
-from end2end_imaging.optics.config import (
+from end2end_imaging.deeplens.base import DeepObj
+from end2end_imaging.deeplens.config import (
     DEPTH,
     DEFAULT_WAVE,
     EPSILON,

@@ -28,7 +28,7 @@ from .imgsim import conv_psf_pixel, conv_psf_pixel_high_res, rotate_psf
 class PSFNetLens(Lens):
     """Neural surrogate lens that predicts PSFs via a small MLP/MLPConv network.
 
-    Wraps a :class:`~end2end_imaging.optics.geolens.GeoLens` with a neural network
+    Wraps a :class:`~end2end_imaging.deeplens.geolens.GeoLens` with a neural network
     trained to predict RGB PSFs from ``(fov, depth, focus_distance)`` inputs.
     After training, PSF prediction is ~100× faster than ray tracing, making
     it suitable for real-time applications and large-scale optimisation.

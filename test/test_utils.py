@@ -6,7 +6,7 @@ import pytest
 import torch
 import numpy as np
 
-from end2end_imaging.optics.ops import interp1d, grid_sample_xy
+from end2end_imaging.deeplens.ops import interp1d, grid_sample_xy
 from end2end_imaging.utils import (
     foc_dist_balanced,
     img2batch,

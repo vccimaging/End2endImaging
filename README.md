@@ -119,7 +119,7 @@ The repo is structured around three decoupled modules (``optics``, ``sensor``, a
 End2endImaging/
 │
 ├── end2end_imaging/
-│   ├── optics/ (optics simulation and lens models)
+│   ├── deeplens/ (optics simulation and lens models)
 │   ├── sensor/ (sensor + ISP simulation)
 │   ├── network/ (surrogate and reconstruction networks)
 │   ├── camera.py (composes lens and sensor into a camera simulator)

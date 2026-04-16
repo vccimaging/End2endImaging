@@ -41,7 +41,7 @@ class GeoLensIO:
     * **Code V .seq**: Code V sequential format (read-only).
 
     This class is not instantiated directly; it is mixed into
-    :class:`~end2end_imaging.optics.geolens.GeoLens`.
+    :class:`~end2end_imaging.deeplens.geolens.GeoLens`.
     """
 
     def read_lens_zmx(self, filename="./test.zmx"):

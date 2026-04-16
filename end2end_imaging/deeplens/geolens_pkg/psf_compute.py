@@ -48,7 +48,7 @@ class GeoLensPSF:
     The geometric and coherent models are differentiable; Huygens is not.
 
     This class is not instantiated directly; it is mixed into
-    :class:`~end2end_imaging.optics.geolens.GeoLens`.
+    :class:`~end2end_imaging.deeplens.geolens.GeoLens`.
     """
 
     # ====================================================================================

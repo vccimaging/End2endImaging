@@ -1,4 +1,4 @@
-"""Tests for end2end_imaging/optics/hybridlens.py — HybridLens."""
+"""Tests for end2end_imaging/deeplens/hybridlens.py — HybridLens."""
 
 import os
 

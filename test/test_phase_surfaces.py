@@ -1,9 +1,9 @@
-"""Tests for end2end_imaging/optics/phase_surface/ — FresnelPhase, Binary2Phase, ZernikePhase, GratingPhase, PolyPhase, Phase base."""
+"""Tests for end2end_imaging/deeplens/phase_surface/ — FresnelPhase, Binary2Phase, ZernikePhase, GratingPhase, PolyPhase, Phase base."""
 
 import pytest
 import torch
 
-from end2end_imaging.optics.phase_surface import (
+from end2end_imaging.deeplens.phase_surface import (
     Binary2Phase,
     FresnelPhase,
     GratingPhase,
@@ -11,7 +11,7 @@ from end2end_imaging.optics.phase_surface import (
     PolyPhase,
     ZernikePhase,
 )
-from end2end_imaging.optics.light import Ray
+from end2end_imaging.deeplens.light import Ray
 
 
 class TestFresnelPhase:

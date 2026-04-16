@@ -35,7 +35,7 @@ class GeoLensVis:
     and traced ray bundles in either the meridional or sagittal plane.
 
     This class is not instantiated directly; it is mixed into
-    :class:`~end2end_imaging.optics.geolens.GeoLens`.
+    :class:`~end2end_imaging.deeplens.geolens.GeoLens`.
     """
 
     # ====================================================================================

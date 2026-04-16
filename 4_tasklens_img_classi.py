@@ -23,7 +23,7 @@ from transformers import get_cosine_schedule_with_warmup
 
 import wandb
 from end2end_imaging import GeoLens
-from end2end_imaging.optics.imgsim import conv_psf
+from end2end_imaging.deeplens.imgsim import conv_psf
 from end2end_imaging.utils import set_logger, set_seed
 
 

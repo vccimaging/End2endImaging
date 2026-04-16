@@ -5,8 +5,8 @@ Tests for end2end_imaging/paraxiallens.py - Paraxial lens model.
 import pytest
 import torch
 
-from end2end_imaging.optics import ParaxialLens
-from end2end_imaging.optics.config import DEPTH
+from end2end_imaging.deeplens import ParaxialLens
+from end2end_imaging.deeplens.config import DEPTH
 
 
 class TestParaxialLensInit:

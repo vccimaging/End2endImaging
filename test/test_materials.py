@@ -1,11 +1,11 @@
 """
-Tests for end2end_imaging/optics/material/materials.py - Glass and plastic materials.
+Tests for end2end_imaging/deeplens/material/materials.py - Glass and plastic materials.
 """
 
 import pytest
 import torch
 
-from end2end_imaging.optics.material import Material
+from end2end_imaging.deeplens.material import Material
 
 
 class TestMaterialInit:

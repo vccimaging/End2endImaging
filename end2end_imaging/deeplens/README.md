@@ -5,7 +5,7 @@ The `optics` package is the core module of DeepLens, providing geometric and wav
 ## Package Entry (`__init__.py`)
 
 -   **`DeepObj`**: Base class for optics objects with `to(device)`, `astype(dtype)`, `clone()`.
--   Re-exports lens classes and subpackage contents for `from end2end_imaging.optics import Lens, GeoLens, Ray, Material, ...`.
+-   Re-exports lens classes and subpackage contents for `from end2end_imaging.deeplens import Lens, GeoLens, Ray, Material, ...`.
 
 ## Lens Classes
 

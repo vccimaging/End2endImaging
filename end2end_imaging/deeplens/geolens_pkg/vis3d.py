@@ -611,7 +611,7 @@ class GeoLensVis3D:
     objects that can be saved to ``.obj`` files for external renderers.
 
     This class is not instantiated directly; it is mixed into
-    :class:`~end2end_imaging.optics.geolens.GeoLens`.
+    :class:`~end2end_imaging.deeplens.geolens.GeoLens`.
     """
 
     # # Attribute stubs to satisfy type checkers when mixed into GeoLens

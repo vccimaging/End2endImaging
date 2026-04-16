@@ -1,4 +1,4 @@
-"""Tests for end2end_imaging/optics/geolens_pkg/io.py — GeoLensIO mixin.
+"""Tests for end2end_imaging/deeplens/geolens_pkg/io.py — GeoLensIO mixin.
 
 Tests lens file I/O for JSON, Zemax (.zmx), and Code V (.seq) formats.
 """

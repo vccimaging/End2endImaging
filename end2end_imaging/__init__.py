@@ -18,14 +18,14 @@ def init_device():
     return device
 
 
-# optics
-from .optics import *
+# deeplens (optics)
+from .deeplens import *
 
 # network
 from .network import *
 
 # geolens
-from .optics.geolens_pkg import *
+from .deeplens.geolens_pkg import *
 
 # utilities
 from .utils import *

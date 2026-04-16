@@ -1,12 +1,12 @@
 """
-Tests for end2end_imaging/optics/wave.py - Wave optics and propagation.
+Tests for end2end_imaging/deeplens/wave.py - Wave optics and propagation.
 """
 
 import pytest
 import torch
 
 
-from end2end_imaging.optics.light import ComplexWave, AngularSpectrumMethod
+from end2end_imaging.deeplens.light import ComplexWave, AngularSpectrumMethod
 
 
 class TestComplexWaveInit:
