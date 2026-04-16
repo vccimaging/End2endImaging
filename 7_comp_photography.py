@@ -1,7 +1,7 @@
-"""An example for computational photography with lens aberration and sensor noise simulation.
+"""End-to-end computational photography: train an image restoration network with physically accurate image simulation.
 
-# The code uses distributed data parallel (DDP) scheme. To run experiments on multiple GPUs, use the following command:
-# torchrun --nproc_per_node=4 7_comp_photography.py
+Usage:
+    python 7_comp_photography.py
 
 Reference:
     [1] Xinge Yang, Chuong Nguyen, Wenbin Wang, Kaizhang Kang, Wolfgang Heidrich, Xiaoxing Li. "Efficient Depth- and Spatially-Varying Image Simulation for Defocus Deblur." ICCV Workshop 2025.
@@ -16,13 +16,10 @@ from datetime import datetime
 
 import lpips
 import torch
-import torch.distributed as dist
 import torch.nn as nn
 import torch.optim as optim
 import yaml
-from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
-from torch.utils.data.distributed import DistributedSampler
 from torchvision.utils import save_image
 from tqdm import tqdm
 
@@ -33,7 +30,6 @@ from end2end_imaging.utils import batch_psnr, batch_ssim, set_logger, set_seed
 
 def config():
     """Load and prepare configuration."""
-    # Load config files
     with open("configs/7_comp_photography.yml") as f:
         args = yaml.load(f, Loader=yaml.FullLoader)
 
@@ -55,15 +51,11 @@ def config():
     # Configure logging
     set_logger(result_dir)
     logging.info(f"Experiment: {args['exp_name']}")
-    if not args["is_debug"]:
-        raise Exception("Add your wandb logging config here.")
 
     # Configure device
     if torch.cuda.is_available():
         args["device"] = torch.device("cuda")
-        args["num_gpus"] = torch.cuda.device_count()
-        args["ddp"] = args["num_gpus"] > 1
-        logging.info(f"Using {args['num_gpus']} {torch.cuda.get_device_name(0)} GPU(s)")
+        logging.info(f"Using {torch.cuda.get_device_name(0)}")
     else:
         args["device"] = torch.device("cpu")
         logging.info("Using CPU")
@@ -76,50 +68,20 @@ def config():
     return args
 
 
-def setup():
-    """
-    Initialize the distributed environment using environment variables set by torchrun.
-    """
-    # When using torchrun, these environment variables are automatically set
-    dist.init_process_group(backend="nccl")
-    torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
-
-
-def cleanup():
-    """
-    Clean up the distributed environment.
-    """
-    dist.destroy_process_group()
-
-
 class Trainer:
-    """Class for training models with DDP."""
+    """Single-GPU trainer for end-to-end computational photography."""
 
-    def __init__(self, local_rank, world_size, args):
-        """Initialize the trainer.
-
-        Args:
-            local_rank: Local GPU rank
-            world_size: Total number of GPUs
-            args: Dictionary with training configuration
-            dataset_args: Dictionary with dataset configuration
-        """
-        self.local_rank = local_rank
-        self.rank = int(os.environ["RANK"])
-        self.world_size = world_size
-        self.device = torch.device(f"cuda:{local_rank}")
+    def __init__(self, args):
         self.args = args
+        self.device = args["device"]
 
-        # Initialize camera, restoration model, and dataset
-        self._init_camera(camera_args=args["camera"])
-        self._init_data(
-            train_set_config=args["train_set"], eval_set_config=args["eval_set"]
-        )
-        self._init_model(net_args=args["network"], train_args=args["train"])
-        
+        # Initialize camera, dataset, model
+        self._init_camera(args["camera"])
+        self._init_data(args["train_set"], args["eval_set"])
+        self._init_model(args["network"], args["train"])
 
     def _init_camera(self, camera_args):
-        """Initialize the camera."""
+        """Initialize the camera (lens + sensor)."""
         self.camera = Camera(
             lens_file=camera_args["lens_file"],
             sensor_file=camera_args["sensor_file"],
@@ -128,7 +90,6 @@ class Trainer:
 
     def _init_model(self, net_args, train_args):
         """Initialize the image restoration model and optimizer."""
-        # Create model
         self.model = NAFNet(
             in_chan=net_args["in_chan"],
             out_chan=net_args["out_chan"],
@@ -136,42 +97,27 @@ class Trainer:
             middle_blk_num=net_args["middle_blk_num"],
             enc_blk_nums=net_args["enc_blk_nums"],
             dec_blk_nums=net_args["dec_blk_nums"],
-        )
-        self.model.to(self.device)
+        ).to(self.device)
 
         # Load checkpoint if provided
         if net_args.get("ckpt_path"):
             state_dict = torch.load(net_args["ckpt_path"], map_location=self.device)
-            try:
-                self.model.load_state_dict(state_dict["model"])
-            except:
-                self.model.load_state_dict(state_dict)
+            self.model.load_state_dict(state_dict.get("model", state_dict))
 
-        # Wrap with DDP
-        self.ddp_model = DDP(self.model, device_ids=[self.local_rank])
-
-        # Create optimizer
-        self.optimizer = optim.AdamW(
-            self.ddp_model.parameters(), lr=float(train_args["lr"])
-        )
-
-        # Create learning rate scheduler
+        self.optimizer = optim.AdamW(self.model.parameters(), lr=float(train_args["lr"]))
         total_steps = train_args["epochs"] * len(self.train_loader)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer,
-            T_max=total_steps,
-            eta_min=1e-7,
+            self.optimizer, T_max=total_steps, eta_min=1e-7
         )
 
-        # Create rendering and training mode
         self.render_mode = train_args["render_mode"]
         self.output_type = train_args["output_type"]
 
-        # Create loss functions (pixel loss and perceptual loss)
+        # Loss functions
         self.l1_loss = nn.L1Loss()
         self.lpips_loss = PerceptualLoss(device=self.device)
 
-        # Create evaluation metrics
+        # Evaluation metric
         self.lpips_metric = lpips.LPIPS(net="alex").to(self.device)
 
     def _init_data(self, train_set_config, eval_set_config):
@@ -180,88 +126,56 @@ class Trainer:
         if train_set_config["dataset"] == "./datasets/DIV2K_train_HR" and not os.path.exists(
             "./datasets/DIV2K_train_HR"
         ):
-            if self.rank == 0:
-                print("Downloading DIV2K dataset...")
-                from end2end_imaging.network.dataset import download_div2k
-                download_div2k("./datasets")
-            # Wait for rank 0 to finish downloading
-            dist.barrier()
+            print("Downloading DIV2K dataset...")
+            from end2end_imaging.network.dataset import download_div2k
+            download_div2k("./datasets")
         elif train_set_config["dataset"] == "./datasets/BSDS300/images/train" and not os.path.exists(
             "./datasets/BSDS300/images/train"
         ):
-            if self.rank == 0:
-                print("Downloading BSDS300 dataset...")
-                from end2end_imaging.network.dataset import download_bsd300
-                download_bsd300("./datasets")
-            # Wait for rank 0 to finish downloading
-            dist.barrier()
-        
-        # Create datasets
+            print("Downloading BSDS300 dataset...")
+            from end2end_imaging.network.dataset import download_bsd300
+            download_bsd300("./datasets")
+
         train_dataset = PhotographicDataset(
-            train_set_config["dataset"],
-            img_res=train_set_config["res"],
-            is_train=True,
+            train_set_config["dataset"], img_res=train_set_config["res"], is_train=True
         )
         val_dataset = PhotographicDataset(
-            eval_set_config["dataset"],
-            img_res=eval_set_config["res"],
-            is_train=False,
+            eval_set_config["dataset"], img_res=eval_set_config["res"], is_train=False
         )
 
-        # Create distributed samplers
-        self.train_sampler = DistributedSampler(
-            train_dataset, num_replicas=self.world_size, rank=self.rank, shuffle=True
-        )
-        val_sampler = DistributedSampler(
-            val_dataset, num_replicas=self.world_size, rank=self.rank, shuffle=False
-        )
-
-        # Create data loaders
         self.train_loader = DataLoader(
-            dataset=train_dataset,
+            train_dataset,
             batch_size=train_set_config["batch_size"],
-            sampler=self.train_sampler,
+            shuffle=True,
             num_workers=train_set_config["num_workers"],
             pin_memory=True,
         )
         self.val_loader = DataLoader(
-            dataset=val_dataset,
+            val_dataset,
             batch_size=eval_set_config["batch_size"],
-            sampler=val_sampler,
+            shuffle=False,
             num_workers=eval_set_config["num_workers"],
             pin_memory=True,
         )
 
     def compute_loss(self, inputs, targets):
-        """Compute loss between model outputs and targets.
+        """Compute loss between model outputs and targets."""
+        outputs = self.model(inputs).clamp(0, 1)
 
-        Args:
-            inputs: Input blurred images [B, C, H, W]
-            targets: Target clean images [B, C, H, W]
-
-        Returns:
-            loss: The computed loss value
-            loss_dict: Dictionary with loss components for logging
-        """
-        # Forward pass
-        outputs = self.ddp_model(inputs)
-        outputs = outputs.clamp(0, 1)
-
-        # Convert to RGB (with random ISP) for loss computation
+        # Convert to RGB (with random ISP augmentation) for loss computation
         sensor = self.camera.sensor
         sensor.sample_augmentation()
         outputs_rgb = sensor.process2rgb(outputs, in_type="rggb")
         targets_rgb = sensor.process2rgb(targets, in_type="rggb")
 
-        # Loss in RGB space (pixel loss and perceptual loss)
+        # Loss in RGB space (pixel + perceptual)
         l1_loss = self.l1_loss(outputs_rgb, targets_rgb)
         perceptual_loss = self.lpips_loss(outputs_rgb, targets_rgb)
         rgb_loss = l1_loss + 0.5 * perceptual_loss
 
-        # Loss in RAW space (pixel loss)
+        # Loss in RAW space
         raw_loss = self.l1_loss(outputs, targets)
 
-        # Total loss
         loss = rgb_loss + raw_loss
         loss_dict = {
             "rgb_loss": rgb_loss.item(),
@@ -270,36 +184,29 @@ class Trainer:
         }
         return loss, loss_dict
 
-    def compute_metrics(self, outputs, targets=None):
-        """Compute evaluation metrics between model outputs and targets."""
-        # Convert to RGB (with default ISP)
+    def compute_metrics(self, outputs, targets):
+        """Compute evaluation metrics (PSNR, SSIM, LPIPS)."""
         sensor = self.camera.sensor
         sensor.reset_augmentation()
         outputs_rgb = sensor.process2rgb(outputs, in_type="rggb")
         targets_rgb = sensor.process2rgb(targets, in_type="rggb")
 
-        # Calculate metrics
-        lpips_score = self.lpips_metric(outputs_rgb * 2 - 1, targets_rgb * 2 - 1)
-        psnr_score = batch_psnr(outputs_rgb, targets_rgb)
-        ssim_score = batch_ssim(outputs_rgb, targets_rgb)
-
-        metrics = {
-            "psnr": psnr_score,
-            "ssim": ssim_score,
-            "lpips": lpips_score,
+        return {
+            "psnr": batch_psnr(outputs_rgb, targets_rgb),
+            "ssim": batch_ssim(outputs_rgb, targets_rgb),
+            "lpips": self.lpips_metric(outputs_rgb * 2 - 1, targets_rgb * 2 - 1),
         }
-        return metrics
 
     def train_epoch(self, epoch):
         """Train for one epoch."""
-        self.train_sampler.set_epoch(epoch)
-        self.ddp_model.train()
+        self.model.train()
+        total_loss = 0.0
 
-        # Training loop
-        for i, data_dict in enumerate(tqdm(self.train_loader, disable=self.rank != 0)):
-            
-            # Image simulation, training data synthesis
-            inputs, targets = self.camera.render(data_dict, render_mode=self.render_mode, output_type=self.output_type)
+        for i, data_dict in enumerate(tqdm(self.train_loader)):
+            # Simulate camera capture (lens aberration + sensor noise)
+            inputs, targets = self.camera.render(
+                data_dict, render_mode=self.render_mode, output_type=self.output_type
+            )
 
             # Forward pass and compute loss
             loss, loss_dict = self.compute_loss(inputs, targets)
@@ -308,16 +215,12 @@ class Trainer:
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-
-            # Update learning rate
             self.scheduler.step()
 
+            total_loss += loss_dict["total_loss"]
+
             # Log progress
-            if (
-                i % self.args["train"]["log_every_n_steps"]
-                == self.args["train"]["log_every_n_steps"] - 1
-                and self.rank == 0
-            ):
+            if (i + 1) % self.args["train"]["log_every_n_steps"] == 0:
                 print(
                     f"Epoch: {epoch + 1}/{self.args['train']['epochs']}, "
                     f"Batch: {i + 1}/{len(self.train_loader)}, "
@@ -326,8 +229,7 @@ class Trainer:
 
                 # Save sample images
                 with torch.no_grad():
-                    outputs = self.ddp_model(inputs)
-
+                    outputs = self.model(inputs)
                     sensor = self.camera.sensor
                     sensor.reset_augmentation()
                     inputs_rgb = sensor.process2rgb(inputs[:, :4, :, :], in_type="rggb")
@@ -338,144 +240,72 @@ class Trainer:
                         f"{self.args['result_dir']}/train_epoch{epoch}_batch{i}.png",
                     )
 
-        return loss_dict["total_loss"] / len(self.train_loader)
+        return total_loss / len(self.train_loader)
 
+    @torch.no_grad()
     def validate(self, epoch):
         """Run validation."""
-        # Set model to eval mode
-        self.ddp_model.eval()
+        self.model.eval()
+        val_psnr, val_ssim, val_lpips, val_samples = 0.0, 0.0, 0.0, 0
 
-        # Initialize metrics
-        val_psnr = 0.0
-        val_ssim = 0.0
-        val_lpips = 0.0
-        val_samples = 0
+        for i, data_dict in enumerate(tqdm(self.val_loader, desc="Validating")):
+            inputs, targets = self.camera.render(
+                data_dict, render_mode=self.render_mode, output_type=self.output_type
+            )
 
-        # Validation loop
-        with torch.no_grad():
-            for i, data_dict in enumerate(
-                tqdm(self.val_loader, desc="Validating", disable=self.rank != 0)
-            ):
-                # Apply blur to create inputs using camera
-                inputs, targets = self.camera.render(data_dict, render_mode=self.render_mode, output_type=self.output_type)
+            outputs = self.model(inputs).clamp(0, 1)
+            metrics = self.compute_metrics(outputs, targets)
 
-                # Forward pass
-                outputs = self.ddp_model(inputs)
-                outputs = outputs.clamp(0, 1)
+            bs = inputs.size(0)
+            val_psnr += metrics["psnr"] * bs
+            val_ssim += metrics["ssim"] * bs
+            val_lpips += metrics["lpips"] * bs
+            val_samples += bs
 
-                # Compute metrics
-                metrics = self.compute_metrics(outputs, targets)
-                val_psnr += metrics["psnr"] * inputs.size(0)
-                val_ssim += metrics["ssim"] * inputs.size(0)
-                val_lpips += metrics["lpips"] * inputs.size(0)
-                val_samples += inputs.size(0)
+            # Save sample validation images
+            if i == 0:
+                sensor = self.camera.sensor
+                sensor.reset_augmentation()
+                inputs_rgb = sensor.process2rgb(inputs[:, :4, :, :], in_type="rggb")
+                outputs_rgb = sensor.process2rgb(outputs[:, :4, :, :], in_type="rggb")
+                targets_rgb = sensor.process2rgb(targets[:, :4, :, :], in_type="rggb")
+                save_image(
+                    torch.cat([inputs_rgb, outputs_rgb, targets_rgb], dim=2),
+                    f"{self.args['result_dir']}/val_epoch{epoch}.png",
+                )
 
-                # Save sample validation images
-                if i == 0 and self.rank == 0:
-                    # Convert to RGB (with default ISP)
-                    sensor = self.camera.sensor
-                    sensor.reset_augmentation()
-                    inputs_rgb = sensor.process2rgb(inputs[:, :4, :, :], in_type="rggb")
-                    outputs_rgb = sensor.process2rgb(outputs.detach()[:, :4, :, :], in_type="rggb")
-                    targets_rgb = sensor.process2rgb(targets[:, :4, :, :], in_type="rggb")
-
-                    # Save images
-                    save_image(
-                        torch.cat([inputs_rgb, outputs_rgb, targets_rgb], dim=2),
-                        f"{self.args['result_dir']}/val_epoch{epoch}_{i}.png",
-                    )
-
-        # Gather validation metrics from all processes
-        val_psnr_tensor = torch.tensor([val_psnr]).to(self.device)
-        val_ssim_tensor = torch.tensor([val_ssim]).to(self.device)
-        val_lpips_tensor = torch.tensor([val_lpips]).to(self.device)
-        val_samples_tensor = torch.tensor([val_samples]).to(self.device)
-
-        dist.all_reduce(val_psnr_tensor, op=dist.ReduceOp.SUM)
-        dist.all_reduce(val_ssim_tensor, op=dist.ReduceOp.SUM)
-        dist.all_reduce(val_lpips_tensor, op=dist.ReduceOp.SUM)
-        dist.all_reduce(val_samples_tensor, op=dist.ReduceOp.SUM)
-
-        # Calculate average metrics
-        metrics = {}
-        if val_samples_tensor.item() > 0:
-            metrics["val_psnr"] = val_psnr_tensor.item() / val_samples_tensor.item()
-            metrics["val_ssim"] = val_ssim_tensor.item() / val_samples_tensor.item()
-            metrics["val_lpips"] = val_lpips_tensor.item() / val_samples_tensor.item()
-        return metrics
+        return {
+            "val_psnr": val_psnr / val_samples,
+            "val_ssim": val_ssim / val_samples,
+            "val_lpips": val_lpips / val_samples,
+        }
 
     def save_checkpoint(self, epoch):
         """Save model checkpoint."""
-        if self.rank != 0:
-            return
-
-        # Save model state
-        torch.save(
-            self.ddp_model.module.state_dict(),
-            f"{self.args['result_dir']}/network_epoch{epoch}.pth",
-        )
-
-        # Save optimizer state
-        torch.save(
-            {
-                "epoch": epoch,
-                "optimizer_state_dict": self.optimizer.state_dict(),
-            },
-            f"{self.args['result_dir']}/optimizer_epoch{epoch}.pth",
-        )
+        torch.save(self.model.state_dict(), f"{self.args['result_dir']}/network_epoch{epoch}.pth")
 
     def train(self):
         """Run the full training process."""
         for epoch in range(self.args["train"]["epochs"]):
-            # Train one epoch
             train_loss = self.train_epoch(epoch)
-
-            if self.rank == 0:
-                print(f"Epoch {epoch + 1}/{self.args['train']['epochs']} completed.")
-                print(f"Train Loss: {train_loss:.4f}")
+            print(f"Epoch {epoch + 1}/{self.args['train']['epochs']} — Loss: {train_loss:.4f}")
 
             # Validate and save checkpoint
             if (epoch + 1) % self.args["train"]["eval_every_n_epochs"] == 0:
                 self.save_checkpoint(epoch + 1)
-
-                # Validate
                 val_metrics = self.validate(epoch + 1)
+                print(
+                    f"  Val PSNR: {val_metrics['val_psnr']:.2f} dB, "
+                    f"SSIM: {val_metrics['val_ssim']:.4f}, "
+                    f"LPIPS: {val_metrics['val_lpips']:.4f}"
+                )
+                print("-" * 50)
 
-                # Log epoch results
-                if self.rank == 0:
-                    if val_metrics:
-                        print(f"Val Loss: {val_metrics.get('val_loss', 'N/A')}")
-                        print(f"Val PSNR: {val_metrics.get('val_psnr', 'N/A')} dB")
-                        print(f"Val SSIM: {val_metrics.get('val_ssim', 'N/A')}")
-                        print(f"Val LPIPS: {val_metrics.get('val_lpips', 'N/A')}")
-                    print("-" * 50)
-
-        # Save final model
-        if self.rank == 0:
-            self.save_checkpoint(self.args["train"]["epochs"] - 1)
-            print("Training completed!")
-
-
-def main():
-    """Main function to start the distributed training."""
-    # Initialize the distributed environment
-    setup()
-
-    # Get local rank and world size
-    local_rank = int(os.environ["LOCAL_RANK"])
-    world_size = int(os.environ["WORLD_SIZE"])
-
-    # Training configuration
-    args = config()
-
-    try:
-        # Create trainer and start training
-        trainer = Trainer(local_rank, world_size, args)
-        trainer.train()
-    finally:
-        # Make sure to clean up even if there's an error
-        cleanup()
+        self.save_checkpoint(self.args["train"]["epochs"])
+        print("Training completed!")
 
 
 if __name__ == "__main__":
-    main()
+    args = config()
+    trainer = Trainer(args)
+    trainer.train()

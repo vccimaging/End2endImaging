@@ -144,10 +144,6 @@ class Camera(Renderer):
             from end2end_imaging.sensor import MonoSensor
 
             self.sensor = MonoSensor.from_config(sensor_file)
-        elif sensor_type == "event":
-            from end2end_imaging.sensor import EventSensor
-
-            self.sensor = EventSensor.from_config(sensor_file)
         else:
             raise NotImplementedError(f"Unsupported sensor type: {sensor_type}")
         self.sensor.to(device)

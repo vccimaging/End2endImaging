@@ -8,15 +8,9 @@
 ## Install from GitHub
 
 ```bash
-pip install git+https://github.com/singer-yang/DeepLens.git
-```
-
-## Development Install
-
-```bash
-git clone https://github.com/singer-yang/DeepLens.git
-cd DeepLens
-pip install -e .
+git clone https://github.com/vccimaging/End2endImaging.git
+cd End2endImaging
+pip install -r requirements.txt
 ```
 
 ## Conda Environment (Recommended)
@@ -24,7 +18,19 @@ pip install -e .
 ```bash
 conda create -n end2end_env python=3.12
 conda activate end2end_env
-pip install -e .
+
+# Linux and Mac
+pip install torch torchvision
+# Windows
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+
+pip install -r requirements.txt
+```
+
+Or use the provided environment file:
+
+```bash
+conda env create -f environment.yml -n end2end_env
 ```
 
 ## Verify GPU Support
@@ -44,11 +50,4 @@ Make sure you're using Python >= 3.12:
 
 ```bash
 python --version
-```
-
-**Missing dependencies:**
-The package installs all required dependencies automatically. If you encounter issues, try:
-
-```bash
-pip install -e ".[dev]"
 ```

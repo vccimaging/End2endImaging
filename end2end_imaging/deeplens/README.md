@@ -1,6 +1,6 @@
 # Optics Package
 
-The `optics` package is the core module of DeepLens, providing geometric and wave optics simulations. It hosts all lens types, optical primitives, and simulation utilities.
+The `deeplens` package is the core optics module of End2endImaging, providing geometric and wave optics simulations. It hosts all lens types, optical primitives, and simulation utilities.
 
 ## Package Entry (`__init__.py`)
 

@@ -1,4 +1,4 @@
-# Optics API Reference
+# DeepLens API Reference
 
 The `end2end_imaging.deeplens` module contains the differentiable lens models, optical surfaces, light representations, and image simulation utilities.
 
@@ -18,7 +18,7 @@ Abstract base class for all lens types. Defines the shared interface: `psf()`, `
 
 ## Lens Models
 
-Differentiable multi-element refractive lens via geometric ray tracing. This is the primary lens model in DeepLens.
+Differentiable multi-element refractive lens via geometric ray tracing. This is the primary lens model.
 
 `GeoLens` uses a mixin architecture — functionality is split across `GeoLensPSF`, `GeoLensEval`, `GeoLensSeidel`, `GeoLensOptim`, `GeoLensSurfOps`, `GeoLensVis`, `GeoLensIO`, `GeoLensTolerance`, and `GeoLensVis3D`.
 

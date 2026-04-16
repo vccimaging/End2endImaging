@@ -49,7 +49,7 @@ The optics package is the core module for optical simulations. It hosts all lens
 Simulates different sensor types and includes an ISP pipeline.
 
 -   `isp_modules/`: ISP modules (demosaic, white balance, gamma, etc.).
--   `mono_sensor.py`, `rgb_sensor.py`, `event_sensor.py`: Sensor implementations.
+-   `mono_sensor.py`, `rgb_sensor.py`: Sensor implementations.
 
 ## `network/`
 

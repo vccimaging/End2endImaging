@@ -18,10 +18,6 @@ Monochrome sensor without color filter array.
 
 ::: end2end_imaging.sensor.MonoSensor
 
-Event camera sensor that outputs asynchronous brightness-change events.
-
-::: end2end_imaging.sensor.EventSensor
-
 ---
 
 ## ISP Modules

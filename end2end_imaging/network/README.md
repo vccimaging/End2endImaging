@@ -1,6 +1,6 @@
 # Network Package
 
-The `network` package in DeepLens provides a collection of neural network architectures, loss functions, and data handling utilities essential for training and implementing end-to-end computational imaging pipelines.
+The `network` package in End2endImaging provides a collection of neural network architectures, loss functions, and data handling utilities essential for training and implementing end-to-end computational imaging pipelines.
 
 This package is a core component for tasks such as:
 -   Image reconstruction and restoration.

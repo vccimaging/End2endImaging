@@ -1,5 +1,5 @@
 # Run all tests
-cd ./DeepLens
+cd ./End2endImaging
 pytest test/ -v
 python3 -m pytest test/ -v
 

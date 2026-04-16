@@ -3,9 +3,9 @@
 ## Development Setup
 
 ```bash
-git clone https://github.com/singer-yang/DeepLens.git
-cd DeepLens
-pip install -e ".[dev]"
+git clone https://github.com/vccimaging/End2endImaging.git
+cd End2endImaging
+pip install -r requirements.txt
 ```
 
 ## Code Style
