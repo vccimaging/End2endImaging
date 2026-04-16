@@ -1,15 +1,14 @@
-site_name: DeepLens
-site_description: "Differentiable optical lens simulator for end-to-end camera system design with PyTorch"
+site_name: End2endImaging
+site_description: "End-to-end differentiable simulation framework for computational imaging"
 site_author: "Xinge Yang"
-site_url: https://vccimaging.github.io/DeepLens/
-repo_url: https://github.com/singer-yang/DeepLens
-repo_name: singer-yang/DeepLens
+site_url: https://vccimaging.github.io/End2endImaging/
+repo_url: https://github.com/vccimaging/End2endImaging
+repo_name: vccimaging/End2endImaging
 
 docs_dir: docs
 
 theme:
   name: material
-  logo: assets/logo.png
   favicon: assets/logo.png
   palette:
     - scheme: default
@@ -62,15 +61,18 @@ extra_javascript:
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
 
 nav:
-  - Home:
-      - Overview: index.md
-      - Installation: installation.md
-      - Quickstart: quickstart.md
-      - Architecture: architecture.md
+  - Home: index.md
   - API Reference:
-      - Optics: api/optics.md
+      - DeepLens: api/deeplens.md
       - Sensor: api/sensor.md
       - Network: api/network.md
       - Camera: api/camera.md
-  - Examples: examples.md
+  - Examples:
+      - Overview: examples/index.md
+      - End-to-End Lens Design: examples/end2end_lens_design.md
+      - Automated Lens Design: examples/autolens.md
+      - PSF Surrogate Network: examples/psf_net.md
+      - Task-Driven Lens Design: examples/task_driven.md
+      - Hybrid Lens Design: examples/hybrid_lens.md
+      - Computational Photography: examples/comp_photography.md
   - Contributing: contributing.md
