@@ -1,6 +1,6 @@
-# `deeplens` Package Structure
+# `end2end_imaging` Package Structure
 
-This document outlines the file structure of the `deeplens` package.
+This document outlines the file structure of the `end2end_imaging` package.
 
 ## Top-Level
 

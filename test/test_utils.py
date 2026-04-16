@@ -1,13 +1,13 @@
 """
-Tests for deeplens/utils.py - Utility functions.
+Tests for end2end_imaging/utils.py - Utility functions.
 """
 
 import pytest
 import torch
 import numpy as np
 
-from deeplens.optics.ops import interp1d, grid_sample_xy
-from deeplens.utils import (
+from end2end_imaging.optics.ops import interp1d, grid_sample_xy
+from end2end_imaging.utils import (
     foc_dist_balanced,
     img2batch,
     batch_psnr,

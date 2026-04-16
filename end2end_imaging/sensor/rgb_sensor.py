@@ -4,8 +4,8 @@ import json
 
 import torch
 
-from deeplens.sensor import Sensor
-from deeplens.sensor.isp_modules.isp import InvertibleISP
+from end2end_imaging.sensor import Sensor
+from end2end_imaging.sensor.isp_modules.isp import InvertibleISP
 
 
 class RGBSensor(Sensor):
@@ -20,7 +20,7 @@ class RGBSensor(Sensor):
     3. **Noise** – shot noise (signal-dependent Gaussian) + read noise
        (ISO-independent Gaussian) added to the n-bit raw data.
     4. **ISP** (forward) – via an
-       :class:`~deeplens.sensor.isp_modules.isp.InvertibleISP`:
+       :class:`~end2end_imaging.sensor.isp_modules.isp.InvertibleISP`:
        black-level correction → white balance → colour matrix →
        demosaicing → gamma correction.
 

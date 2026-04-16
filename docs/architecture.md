@@ -14,7 +14,7 @@ Scene → [ Optics ] → [ Sensor ] → [ Network ] → Output Image
 
 ## Optics
 
-The `deeplens.optics` module contains differentiable lens models that simulate how light passes through an optical system. Each lens computes a point spread function (PSF) and renders images via PSF convolution.
+The `end2end_imaging.optics` module contains differentiable lens models that simulate how light passes through an optical system. Each lens computes a point spread function (PSF) and renders images via PSF convolution.
 
 - **`GeoLens`** — Multi-element refractive lens via differentiable ray tracing. The primary lens model, supporting Zemax/Code V/JSON file I/O. Uses a mixin architecture for PSF computation, evaluation, Seidel aberration analysis, optimization, surface operations, visualization, and tolerancing.
 - **`HybridLens`** — Refractive lens (`GeoLens`) combined with a diffractive optical element (DOE). Coherent ray tracing to the DOE plane, then Angular Spectrum Method (ASM) propagation to the sensor.
@@ -30,7 +30,7 @@ Surface intersection in `geometric_surface/base.py` uses a non-differentiable Ne
 
 ## Sensor
 
-The `deeplens.sensor` module simulates the image sensor and its signal processing pipeline.
+The `end2end_imaging.sensor` module simulates the image sensor and its signal processing pipeline.
 
 - **`RGBSensor`** — Full RGB sensor with Bayer color filter array, read/shot noise model, and an ISP pipeline (black level compensation, white balance, demosaicing, color correction, gamma correction).
 - **`MonoSensor`** — Monochrome sensor without a color filter array.
@@ -40,7 +40,7 @@ The ISP pipeline is built from composable `torch.nn.Module` stages in `sensor/is
 
 ## Network
 
-The `deeplens.network` module provides neural networks for two purposes:
+The `end2end_imaging.network` module provides neural networks for two purposes:
 
 - **PSF surrogates** — Networks that learn to predict PSFs from lens parameters, replacing ray tracing during training: `MLP`, `MLPConv`, `Siren`, `ModulateSiren`.
 - **Image reconstruction** — Networks that restore a clean image from a degraded sensor capture: `NAFNet`, `UNet`, `Restormer`.
@@ -49,11 +49,11 @@ Loss functions (`PerceptualLoss`, `PSNRLoss`, `SSIMLoss`) are also provided for 
 
 ## Camera
 
-The `Camera` class (`deeplens/camera.py`) connects a `Lens` and a `Sensor` into an end-to-end differentiable pipeline:
+The `Camera` class (`end2end_imaging/camera.py`) connects a `Lens` and a `Sensor` into an end-to-end differentiable pipeline:
 
 ```python
-from deeplens import GeoLens, Camera
-from deeplens.sensor import RGBSensor
+from end2end_imaging import GeoLens, Camera
+from end2end_imaging.sensor import RGBSensor
 
 lens = GeoLens(filename="datasets/lenses/cellphone/cellphone80deg.json")
 sensor = RGBSensor(res=(1920, 1080))

@@ -2,12 +2,12 @@
 __pycache__/
 .DS_Store
 CLAUDE.md
-deeplens.egg-info/
+end2end_imaging.egg-info/
 0_test.py
 *.png
 *.sh
 results/
-deeplens/do_code/
+end2end_imaging/do_code/
 !lenses/*.png
 !lenses/**/*.png
 !images/*.png

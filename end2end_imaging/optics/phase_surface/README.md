@@ -2,7 +2,7 @@
 
 Phase surfaces are a class of diffractive surfaces consisting of a planar substrate with a diffraction pattern.
 
-In commercial software like Zemax, diffractive surfaces are typically simulated by adding a ray bending angle to the standard refracted ray. In DeepLens, phase surfaces operate on the same principle using ray optics. (DeepLens also supports diffractive surfaces simulated via wave optics; please refer to the `deeplens/optics/diffractive_surface/` directory. Both modules represent diffractive surfaces, differing primarily in the simulation method.) Diffraction pattern can also be applied on curved surfaces, which has not been implemented yet.
+In commercial software like Zemax, diffractive surfaces are typically simulated by adding a ray bending angle to the standard refracted ray. In DeepLens, phase surfaces operate on the same principle using ray optics. (DeepLens also supports diffractive surfaces simulated via wave optics; please refer to the `end2end_imaging/optics/diffractive_surface/` directory. Both modules represent diffractive surfaces, differing primarily in the simulation method.) Diffraction pattern can also be applied on curved surfaces, which has not been implemented yet.
 
 Common manufacturing methods for phase surfaces include:
 - **Lithography**: Standard semiconductor processing technique.

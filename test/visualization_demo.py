@@ -3,7 +3,7 @@ import os
 
 import numpy as np
 
-from deeplens import GeoLens
+from end2end_imaging import GeoLens
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--save_dir", type=str, default="./visualization")

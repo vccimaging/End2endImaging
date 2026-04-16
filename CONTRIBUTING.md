@@ -25,13 +25,13 @@ DeepLens is primarily a Pytorch project. To set up your development environment,
 A quick summary of the steps:
 ```
 # Create and activate a conda environment
-conda env create -f environment.yml -n deeplens_env
-conda activate deeplens_env
+conda env create -f environment.yml -n end2end_env
+conda activate end2end_env
 ```
 or
 ```
-conda create --name deeplens_env python=3.9
-conda activate deeplens_env
+conda create --name end2end_env python=3.9
+conda activate end2end_env
 pip install -r requirements.txt
 ```
 

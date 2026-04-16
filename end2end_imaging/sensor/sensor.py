@@ -11,7 +11,7 @@ import json
 
 import torch.nn as nn
 
-from deeplens.sensor.isp_modules.gamma_correction import GammaCorrection
+from end2end_imaging.sensor.isp_modules.gamma_correction import GammaCorrection
 
 
 class Sensor(nn.Module):
@@ -20,7 +20,7 @@ class Sensor(nn.Module):
     The simplest sensor model: records physical size and resolution, and
     applies only a gamma correction in the ISP forward pass.  For a sensor
     with noise simulation and Bayer demosaicing use
-    :class:`~deeplens.sensor.rgb_sensor.RGBSensor`.
+    :class:`~end2end_imaging.sensor.rgb_sensor.RGBSensor`.
 
     Attributes:
         size (tuple): Physical sensor size (W, H) [mm].

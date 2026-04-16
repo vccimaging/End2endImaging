@@ -13,7 +13,7 @@ import json
 
 import torch
 
-from deeplens.sensor.sensor import Sensor
+from end2end_imaging.sensor.sensor import Sensor
 
 
 class EventSensor(Sensor):

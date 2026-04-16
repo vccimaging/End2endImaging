@@ -1,4 +1,4 @@
-"""Tests for deeplens/optics/geolens_pkg/io.py — GeoLensIO mixin.
+"""Tests for end2end_imaging/optics/geolens_pkg/io.py — GeoLensIO mixin.
 
 Tests lens file I/O for JSON, Zemax (.zmx), and Code V (.seq) formats.
 """
@@ -22,7 +22,7 @@ class TestJSONIO:
         lens.write_lens_json(out_path)
         assert os.path.exists(out_path)
 
-        from deeplens import GeoLens
+        from end2end_imaging import GeoLens
 
         lens2 = GeoLens(filename=out_path)
         assert len(lens2.surfaces) == original_num_surfs
@@ -36,7 +36,7 @@ class TestJSONIO:
 
         lens.write_lens_json(out_path)
 
-        from deeplens import GeoLens
+        from end2end_imaging import GeoLens
 
         lens2 = GeoLens(filename=out_path)
         assert len(lens2.surfaces) == original_num_surfs
@@ -51,7 +51,7 @@ class TestZMXIO:
         if not os.path.exists(zmx_path):
             pytest.skip("ZMX test file not available")
 
-        from deeplens import GeoLens
+        from end2end_imaging import GeoLens
 
         lens = GeoLens()
         lens.read_lens_zmx(zmx_path)
@@ -72,7 +72,7 @@ class TestZMXIO:
         out_path = os.path.join(test_output_dir, "test_zmx_roundtrip.zmx")
         lens.write_lens_zmx(out_path)
 
-        from deeplens import GeoLens
+        from end2end_imaging import GeoLens
 
         lens2 = GeoLens()
         lens2.read_lens_zmx(out_path)
@@ -100,7 +100,7 @@ class TestCrossFormat:
         zmx_path = os.path.join(test_output_dir, "test_cross_format.zmx")
         lens.write_lens_zmx(zmx_path)
 
-        from deeplens import GeoLens
+        from end2end_imaging import GeoLens
 
         lens2 = GeoLens()
         lens2.read_lens_zmx(zmx_path)

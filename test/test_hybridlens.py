@@ -1,4 +1,4 @@
-"""Tests for deeplens/optics/hybridlens.py — HybridLens."""
+"""Tests for end2end_imaging/optics/hybridlens.py — HybridLens."""
 
 import os
 
@@ -75,7 +75,7 @@ class TestHybridLensIO:
         lens.write_lens_json(out_path)
         assert os.path.exists(out_path)
 
-        from deeplens import HybridLens
+        from end2end_imaging import HybridLens
 
         lens2 = HybridLens(filename=out_path)
         assert lens2.geolens is not None

@@ -1,4 +1,4 @@
-"""Tests for deeplens/optics/geolens_pkg/eval.py — GeoLensEval mixin.
+"""Tests for end2end_imaging/optics/geolens_pkg/eval.py — GeoLensEval mixin.
 
 All methods are tested via GeoLens instances (mixin architecture).
 """

@@ -1,9 +1,9 @@
-"""Tests for deeplens/optics/loss.py — PSFLoss and PSFStrehlLoss."""
+"""Tests for end2end_imaging/optics/loss.py — PSFLoss and PSFStrehlLoss."""
 
 import pytest
 import torch
 
-from deeplens.optics.loss import PSFLoss, PSFStrehlLoss
+from end2end_imaging.optics.loss import PSFLoss, PSFStrehlLoss
 
 
 class TestPSFLoss:

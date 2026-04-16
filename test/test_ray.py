@@ -1,12 +1,12 @@
 """
-Tests for deeplens/optics/ray.py - Ray class operations.
+Tests for end2end_imaging/optics/ray.py - Ray class operations.
 """
 
 import pytest
 import torch
 
-from deeplens.optics.light import Ray
-from deeplens.optics.config import DEFAULT_WAVE
+from end2end_imaging.optics.light import Ray
+from end2end_imaging.optics.config import DEFAULT_WAVE
 
 
 class TestRayInit:

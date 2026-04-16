@@ -22,9 +22,9 @@ from tqdm import tqdm
 from transformers import get_cosine_schedule_with_warmup
 
 import wandb
-from deeplens import GeoLens
-from deeplens.optics.imgsim import conv_psf
-from deeplens.utils import set_logger, set_seed
+from end2end_imaging import GeoLens
+from end2end_imaging.optics.imgsim import conv_psf
+from end2end_imaging.utils import set_logger, set_seed
 
 
 def config():

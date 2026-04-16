@@ -22,8 +22,8 @@ pip install -e .
 ## Conda Environment (Recommended)
 
 ```bash
-conda create -n deeplens python=3.12
-conda activate deeplens
+conda create -n end2end_env python=3.12
+conda activate end2end_env
 pip install -e .
 ```
 

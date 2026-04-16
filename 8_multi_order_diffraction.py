@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from deeplens.optics import HybridLens
+from end2end_imaging.optics import HybridLens
 
 
 def analyze_psf(psf, save_name="./psf"):

@@ -7,8 +7,8 @@ Technical Paper:
 import os
 from datetime import datetime
 
-from deeplens.optics import PSFNetLens
-from deeplens.utils import set_logger
+from end2end_imaging.optics import PSFNetLens
+from end2end_imaging.utils import set_logger
 
 result_dir = "./results/" + datetime.now().strftime("%m%d-%H%M%S") + "-PSFNet"
 os.makedirs(result_dir, exist_ok=True)

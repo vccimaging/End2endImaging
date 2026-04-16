@@ -7,7 +7,7 @@ This guide walks through the core DeepLens workflow: loading a lens, computing P
 `GeoLens` is the primary lens model — a differentiable multi-element refractive lens loaded from a JSON, Zemax `.zmx`, or Code V `.seq` file.
 
 ```python
-from deeplens import GeoLens
+from end2end_imaging import GeoLens
 
 lens = GeoLens(filename="datasets/lenses/cellphone/cellphone80deg.json")
 lens.summary()
@@ -66,8 +66,8 @@ DeepLens provides several lens models for different use cases:
 Combine a lens with a sensor for end-to-end image simulation:
 
 ```python
-from deeplens import GeoLens, Camera
-from deeplens.sensor import RGBSensor
+from end2end_imaging import GeoLens, Camera
+from end2end_imaging.sensor import RGBSensor
 
 lens = GeoLens(filename="datasets/lenses/cellphone/cellphone80deg.json")
 sensor = RGBSensor(res=(1920, 1080))

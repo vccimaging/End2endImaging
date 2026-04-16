@@ -133,19 +133,19 @@ class Camera(Renderer):
 
         # Sensor
         if sensor_type == "simple":
-            from deeplens.sensor import Sensor
+            from end2end_imaging.sensor import Sensor
 
             self.sensor = Sensor.from_config(sensor_file)
         elif sensor_type == "rgb":
-            from deeplens.sensor import RGBSensor
+            from end2end_imaging.sensor import RGBSensor
 
             self.sensor = RGBSensor.from_config(sensor_file)
         elif sensor_type == "mono":
-            from deeplens.sensor import MonoSensor
+            from end2end_imaging.sensor import MonoSensor
 
             self.sensor = MonoSensor.from_config(sensor_file)
         elif sensor_type == "event":
-            from deeplens.sensor import EventSensor
+            from end2end_imaging.sensor import EventSensor
 
             self.sensor = EventSensor.from_config(sensor_file)
         else:
@@ -156,19 +156,19 @@ class Camera(Renderer):
 
         # Lens
         if lens_type == "geolens":
-            from deeplens.optics import GeoLens
+            from end2end_imaging.optics import GeoLens
 
             self.lens = GeoLens(lens_file, device=device)
         elif lens_type == "hybridlens":
-            from deeplens.optics import HybridLens
+            from end2end_imaging.optics import HybridLens
 
             self.lens = HybridLens(lens_file, device=device)
         elif lens_type == "paraxiallens":
-            from deeplens.optics import ParaxialLens
+            from end2end_imaging.optics import ParaxialLens
 
             self.lens = ParaxialLens(lens_file, device=device)
         elif lens_type == "diffraclens":
-            from deeplens.optics import DiffractiveLens
+            from end2end_imaging.optics import DiffractiveLens
 
             self.lens = DiffractiveLens(lens_file, device=device)
         else:

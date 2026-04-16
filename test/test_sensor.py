@@ -1,12 +1,12 @@
 """
-Tests for deeplens/sensor/ - Sensor base class and MonoSensor.
+Tests for end2end_imaging/sensor/ - Sensor base class and MonoSensor.
 """
 
 import pytest
 import torch
 
-from deeplens.sensor.sensor import Sensor
-from deeplens.sensor.mono_sensor import MonoSensor
+from end2end_imaging.sensor.sensor import Sensor
+from end2end_imaging.sensor.mono_sensor import MonoSensor
 
 
 # ===========================

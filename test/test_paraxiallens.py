@@ -1,12 +1,12 @@
 """
-Tests for deeplens/paraxiallens.py - Paraxial lens model.
+Tests for end2end_imaging/paraxiallens.py - Paraxial lens model.
 """
 
 import pytest
 import torch
 
-from deeplens.optics import ParaxialLens
-from deeplens.optics.config import DEPTH
+from end2end_imaging.optics import ParaxialLens
+from end2end_imaging.optics.config import DEPTH
 
 
 class TestParaxialLensInit:

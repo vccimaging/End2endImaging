@@ -1,14 +1,14 @@
 """
-Tests for deeplens core utilities - init_device, optics config constants, and DeepObj.
+Tests for end2end_imaging core utilities - init_device, optics config constants, and DeepObj.
 """
 
 import pytest
 import torch
 
 
-from deeplens import init_device
-from deeplens.optics.base import DeepObj
-from deeplens.optics.config import (
+from end2end_imaging import init_device
+from end2end_imaging.optics.base import DeepObj
+from end2end_imaging.optics.config import (
     DEPTH,
     DEFAULT_WAVE,
     EPSILON,

@@ -33,7 +33,7 @@ pytest test/test_geolens.py -v
 Run with coverage:
 
 ```bash
-pytest test/ --cov=deeplens --cov-report=term-missing
+pytest test/ --cov=end2end_imaging --cov-report=term-missing
 ```
 
 ## Pull Request Guidelines

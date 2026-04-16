@@ -63,26 +63,26 @@ class GeoLens(
     Uses a **mixin architecture** – eight specialised mixin classes are
     composed at class definition time to keep each concern isolated:
 
-    * :class:`~deeplens.optics.geolens_pkg.psf_compute.GeoLensPSF` – PSF
+    * :class:`~end2end_imaging.optics.geolens_pkg.psf_compute.GeoLensPSF` – PSF
       computation (geometric, coherent, Huygens models).
-    * :class:`~deeplens.optics.geolens_pkg.eval.GeoLensEval` – optical
+    * :class:`~end2end_imaging.optics.geolens_pkg.eval.GeoLensEval` – optical
       performance evaluation (spot, MTF, distortion, vignetting).
-    * :class:`~deeplens.optics.geolens_pkg.optim.GeoLensOptim` – loss
+    * :class:`~end2end_imaging.optics.geolens_pkg.optim.GeoLensOptim` – loss
       functions and gradient-based optimisation.
-    * :class:`~deeplens.optics.geolens_pkg.optim_ops.GeoLensSurfOps` –
+    * :class:`~end2end_imaging.optics.geolens_pkg.optim_ops.GeoLensSurfOps` –
       surface geometry operations (aspheric conversion, pruning, shape
       correction, material matching).
-    * :class:`~deeplens.optics.geolens_pkg.vis.GeoLensVis` – 2-D layout
+    * :class:`~end2end_imaging.optics.geolens_pkg.vis.GeoLensVis` – 2-D layout
       and ray visualisation.
-    * :class:`~deeplens.optics.geolens_pkg.io.GeoLensIO` – read/write
+    * :class:`~end2end_imaging.optics.geolens_pkg.io.GeoLensIO` – read/write
       JSON, Zemax ``.zmx``.
-    * :class:`~deeplens.optics.geolens_pkg.eval_tolerance.GeoLensTolerance` –
+    * :class:`~end2end_imaging.optics.geolens_pkg.eval_tolerance.GeoLensTolerance` –
       manufacturing tolerance analysis.
-    * :class:`~deeplens.optics.geolens_pkg.vis3d.GeoLensVis3D` – 3-D
+    * :class:`~end2end_imaging.optics.geolens_pkg.vis3d.GeoLensVis3D` – 3-D
       mesh visualisation.
 
     **Key differentiability trick**: Ray-surface intersection
-    (:meth:`~deeplens.optics.geometric_surface.base.Surface.newtons_method`)
+    (:meth:`~end2end_imaging.optics.geometric_surface.base.Surface.newtons_method`)
     uses a non-differentiable Newton loop followed by one differentiable
     Newton step to enable gradient flow.
 

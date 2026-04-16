@@ -1,14 +1,14 @@
 """
-Tests for deeplens/optics/geometric_surface/ - Geometric surface classes.
+Tests for end2end_imaging/optics/geometric_surface/ - Geometric surface classes.
 """
 
 import pytest
 import torch
 import math
 
-from deeplens.optics.geometric_surface import Spheric, Aspheric, Aperture, Plane
-from deeplens.optics.geometric_surface.base import Surface
-from deeplens.optics.light import Ray
+from end2end_imaging.optics.geometric_surface import Spheric, Aspheric, Aperture, Plane
+from end2end_imaging.optics.geometric_surface.base import Surface
+from end2end_imaging.optics.light import Ray
 
 
 class TestSphericSurface:

@@ -1,7 +1,7 @@
 """Tests for EventSensor."""
 
 import torch
-from deeplens.sensor.event_sensor import EventSensor
+from end2end_imaging.sensor.event_sensor import EventSensor
 
 
 def test_init():

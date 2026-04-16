@@ -1,4 +1,4 @@
-"""Tests for deeplens/optics/diffraclens.py — DiffractiveLens."""
+"""Tests for end2end_imaging/optics/diffraclens.py — DiffractiveLens."""
 
 import pytest
 import torch
@@ -9,7 +9,7 @@ class TestDiffractiveLensInit:
 
     def test_init_empty(self):
         """DiffractiveLens can be created without a file."""
-        from deeplens import DiffractiveLens
+        from end2end_imaging import DiffractiveLens
 
         old_dtype = torch.get_default_dtype()
         lens = DiffractiveLens()

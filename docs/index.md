@@ -15,7 +15,7 @@ DeepLens models the full imaging pipeline — optics, sensor, and image processi
 ## Quick Install
 
 ```bash
-pip install deeplens-core
+pip install end2end_imaging
 ```
 
 ## Getting Started

@@ -8,9 +8,9 @@ import json
 import torch
 import torch.nn as nn
 
-from deeplens.sensor.sensor import Sensor
-from deeplens.sensor.isp_modules.black_level import BlackLevelCompensation
-from deeplens.sensor.isp_modules.gamma_correction import GammaCorrection
+from end2end_imaging.sensor.sensor import Sensor
+from end2end_imaging.sensor.isp_modules.black_level import BlackLevelCompensation
+from end2end_imaging.sensor.isp_modules.gamma_correction import GammaCorrection
 
 
 class MonoSensor(Sensor):

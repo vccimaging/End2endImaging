@@ -1,6 +1,6 @@
-# DeepLens
+# End2endImaging
 
-**DeepLens** is a differentiable optical lens simulator for (1) automated optical design, (2) end-to-end optics-vision co-design, and (3) photorealistic image simulation. It helps researchers build custom differentiable optical systems and computational imaging pipelines with minimal effort.
+**End2endImaging** is a differentiable optical lens simulator for (1) automated optical design, (2) end-to-end optics-vision co-design, and (3) photorealistic image simulation. It helps researchers build custom differentiable optical systems and computational imaging pipelines with minimal effort.
 
 <div style="text-align:center;">
     <img src="assets/logo.png"/>
@@ -9,12 +9,11 @@
 <p align="center">
     <a href="https://vccimaging.org/DeepLens/">Docs</a> •
     <a href="https://github.com/singer-yang/DeepLens-tutorials">Tutorials</a> •
-    <a href="#community">Community</a> •
-    <a href="https://pypi.org/project/deeplens-core/">PyPI</a>
+    <a href="#community">Community</a>
 </p>
 
 ```python
-from deeplens import GeoLens
+from end2end_imaging import GeoLens
 
 lens = GeoLens(filename="./datasets/lenses/cellphone/cellphone80deg.json")
 lens.analysis(full_eval=True, render=True)
@@ -27,7 +26,7 @@ lens.analysis(full_eval=True, render=True)
 
 ## Features
 
-1. **Differentiable Optics.** DeepLens leverages gradient backpropagation and differentiable optimization, demonstrating outstanding optimization power compared to classical optical design.
+1. **Differentiable Optics.** Leverages gradient backpropagation and differentiable optimization, demonstrating outstanding optimization power compared to classical optical design.
 2. **Automated Lens Design.** Enables automated lens design using curriculum learning, optical regularization losses, and GPU acceleration.
 3. **Hybrid Refractive-Diffractive Optics.** Supports accurate simulation and optimization of hybrid refractive-diffractive lenses (e.g., DOEs, metasurfaces).
 4. **Accurate Image Simulation.** Delivers photorealistic, spatially-varying image simulations, verified against commercial software and real-world experiments.
@@ -88,14 +87,14 @@ Design hybrid refractive-diffractive lenses with a new ray-wave model.
 Clone this repo:
 
 ```
-git clone https://github.com/singer-yang/DeepLens
-cd DeepLens
+git clone https://github.com/vccimaging/End2endImaging
+cd End2endImaging
 ```
 
 Create a conda environment:
 ```
-conda create -n deeplens_env python=3.12
-conda activate deeplens_env
+conda create -n end2end_env python=3.12
+conda activate end2end_env
 
 # Linux and Mac
 pip install torch torchvision
@@ -106,7 +105,7 @@ pip install -r requirements.txt
 ```
 or
 ```
-conda env create -f environment.yml -n deeplens_env
+conda env create -f environment.yml -n end2end_env
 ```
 
 Run the demo code:
@@ -114,12 +113,12 @@ Run the demo code:
 python 0_hello_deeplens.py
 ```
 
-DeepLens repo is structured around three decoupled modules (``optics``, ``sensor``, and ``network``):
+The repo is structured around three decoupled modules (``optics``, ``sensor``, and ``network``):
 
 ```
-DeepLens/
+End2endImaging/
 │
-├── deeplens/
+├── end2end_imaging/
 │   ├── optics/ (optics simulation and lens models)
 │   ├── sensor/ (sensor + ISP simulation)
 │   ├── network/ (surrogate and reconstruction networks)
@@ -145,7 +144,7 @@ We welcome all contributions. To get started, please read our [Contributing Guid
 
 ## Citation
 
-If you use DeepLens in your research, please cite the paper. See more in [History of DeepLens](./CITATION.md).
+If you use this project in your research, please cite the paper. See more in [History of DeepLens](./CITATION.md).
 
 ```bibtex
 @article{yang2024curriculum,

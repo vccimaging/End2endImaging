@@ -2,7 +2,7 @@
 
 Deliberately kept narrow: only tensor ops whose gradients must flow through
 the lens simulation belong here. Experiment helpers (logging, EDoF utilities,
-etc.) live in deeplens/utils.py.
+etc.) live in end2end_imaging/utils.py.
 """
 
 import torch

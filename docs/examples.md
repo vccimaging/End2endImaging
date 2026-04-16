@@ -6,7 +6,7 @@ Optimize a multi-element lens for improved imaging performance using gradient de
 
 ```python
 import torch
-from deeplens import GeoLens
+from end2end_imaging import GeoLens
 
 # Load a starting lens design
 lens = GeoLens(filename="datasets/lenses/cellphone/cellphone80deg.json")
@@ -37,9 +37,9 @@ Jointly optimize lens optics and a neural reconstruction network:
 
 ```python
 import torch
-from deeplens import GeoLens, Camera
-from deeplens.sensor import RGBSensor
-from deeplens.network import NAFNet
+from end2end_imaging import GeoLens, Camera
+from end2end_imaging.sensor import RGBSensor
+from end2end_imaging.network import NAFNet
 
 # Build the camera pipeline
 lens = GeoLens(filename="datasets/lenses/cellphone/cellphone80deg.json")
@@ -73,8 +73,8 @@ Simulate a photograph captured by a specific lens + sensor combination:
 
 ```python
 import torchvision
-from deeplens import GeoLens
-from deeplens.sensor import RGBSensor
+from end2end_imaging import GeoLens
+from end2end_imaging.sensor import RGBSensor
 
 # Load lens and sensor
 lens = GeoLens(filename="datasets/lenses/cellphone/cellphone80deg.json")
@@ -97,7 +97,7 @@ img_out = sensor.forward(img_bayer, iso=800)
 Design a lens that combines refractive optics with a diffractive optical element:
 
 ```python
-from deeplens import GeoLens, HybridLens
+from end2end_imaging import GeoLens, HybridLens
 
 # Load the refractive part
 geolens = GeoLens(filename="datasets/lenses/cellphone/cellphone80deg.json")

@@ -9,7 +9,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from deeplens import init_device
+from end2end_imaging import init_device
 from .config import (
     DEFAULT_WAVE,
     DEPTH,
@@ -444,7 +444,7 @@ class Lens(DeepObj):
 
         Performs only the optical component of image simulation and is fully
         differentiable.  Sensor noise is handled separately by the
-        :class:`~deeplens.camera.Camera` class.
+        :class:`~end2end_imaging.camera.Camera` class.
 
         For incoherent imaging the intensity PSF is convolved with the
         object-space image.  For coherent imaging the complex PSF is convolved

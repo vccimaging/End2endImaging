@@ -26,9 +26,9 @@ from torch.utils.data.distributed import DistributedSampler
 from torchvision.utils import save_image
 from tqdm import tqdm
 
-from deeplens import Camera
-from deeplens.network import NAFNet, PerceptualLoss, PhotographicDataset
-from deeplens.utils import batch_psnr, batch_ssim, set_logger, set_seed
+from end2end_imaging import Camera
+from end2end_imaging.network import NAFNet, PerceptualLoss, PhotographicDataset
+from end2end_imaging.utils import batch_psnr, batch_ssim, set_logger, set_seed
 
 
 def config():
@@ -182,7 +182,7 @@ class Trainer:
         ):
             if self.rank == 0:
                 print("Downloading DIV2K dataset...")
-                from deeplens.network.dataset import download_div2k
+                from end2end_imaging.network.dataset import download_div2k
                 download_div2k("./datasets")
             # Wait for rank 0 to finish downloading
             dist.barrier()
@@ -191,7 +191,7 @@ class Trainer:
         ):
             if self.rank == 0:
                 print("Downloading BSDS300 dataset...")
-                from deeplens.network.dataset import download_bsd300
+                from end2end_imaging.network.dataset import download_bsd300
                 download_bsd300("./datasets")
             # Wait for rank 0 to finish downloading
             dist.barrier()

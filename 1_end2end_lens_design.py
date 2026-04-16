@@ -22,10 +22,10 @@ from PIL import Image
 from tqdm import tqdm
 
 import wandb
-from deeplens import GeoLens
-from deeplens.network import NAFNet
-from deeplens.network.dataset import ImageDataset
-from deeplens.utils import (
+from end2end_imaging import GeoLens
+from end2end_imaging.network import NAFNet
+from end2end_imaging.network.dataset import ImageDataset
+from end2end_imaging.utils import (
     batch_PSNR,
     batch_SSIM,
     denormalize_ImageNet,
@@ -91,14 +91,14 @@ def end2end_train(lens: GeoLens, net, args):
     if args["train"]["train_dir"] == "./datasets/DIV2K_train_HR" and not os.path.exists(
         "./datasets/DIV2K_train_HR"
     ):
-        from deeplens.network.dataset import download_div2k
+        from end2end_imaging.network.dataset import download_div2k
         download_div2k("./datasets")
     elif args["train"][
         "train_dir"
     ] == "./datasets/BSDS300/images/train" and not os.path.exists(
         "./datasets/BSDS300/images/train"
     ):
-        from deeplens.network.dataset import download_bsd300
+        from end2end_imaging.network.dataset import download_bsd300
         download_bsd300("./datasets")
 
     train_set = ImageDataset(args["train"]["train_dir"], lens.sensor_res)

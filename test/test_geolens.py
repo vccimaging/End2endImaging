@@ -1,13 +1,13 @@
 """
-Tests for deeplens/geolens.py - Main geometric lens class.
+Tests for end2end_imaging/geolens.py - Main geometric lens class.
 """
 
 import os
 import pytest
 import torch
 
-from deeplens import GeoLens
-from deeplens.optics.config import DEPTH, DEFAULT_WAVE
+from end2end_imaging import GeoLens
+from end2end_imaging.optics.config import DEPTH, DEFAULT_WAVE
 
 
 class TestGeoLensLoading:

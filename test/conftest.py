@@ -8,7 +8,7 @@ import sys
 import pytest
 import torch
 
-# Add deeplens to path
+# Add end2end_imaging to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -44,7 +44,7 @@ def device_auto():
 @pytest.fixture(scope="function")
 def sample_singlet_lens(device_auto):
     """Load a simple singlet lens for testing."""
-    from deeplens import GeoLens
+    from end2end_imaging import GeoLens
 
     lens_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -58,7 +58,7 @@ def sample_singlet_lens(device_auto):
 @pytest.fixture(scope="function")
 def sample_cellphone_lens(device_auto):
     """Load a cellphone lens with aspheric surfaces for testing."""
-    from deeplens import GeoLens
+    from end2end_imaging import GeoLens
 
     lens_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -72,7 +72,7 @@ def sample_cellphone_lens(device_auto):
 @pytest.fixture(scope="function")
 def sample_camera_lens(device_auto):
     """Load a camera lens for testing."""
-    from deeplens import GeoLens
+    from end2end_imaging import GeoLens
 
     lens_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -114,7 +114,7 @@ def sample_image_small(device_auto):
 @pytest.fixture(scope="function")
 def sample_ray(device_auto):
     """Create a sample ray for testing."""
-    from deeplens.optics.light import Ray
+    from end2end_imaging.optics.light import Ray
 
     o = torch.tensor([[0.0, 0.0, -100.0]], device=device_auto)
     d = torch.tensor([[0.0, 0.0, 1.0]], device=device_auto)
@@ -125,7 +125,7 @@ def sample_ray(device_auto):
 @pytest.fixture(scope="function")
 def sample_rays_batch(device_auto):
     """Create a batch of rays for testing."""
-    from deeplens.optics.light import Ray
+    from end2end_imaging.optics.light import Ray
 
     # Create 100 rays in a grid pattern
     n = 10
@@ -170,7 +170,7 @@ def test_output_dir(project_root):
 @pytest.fixture(scope="function")
 def sample_hybridlens(device_auto):
     """Load hybrid lens for testing."""
-    from deeplens import HybridLens
+    from end2end_imaging import HybridLens
 
     lens_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -183,8 +183,8 @@ def sample_hybridlens(device_auto):
 @pytest.fixture(scope="function")
 def sample_diffraclens():
     """Create a diffractive lens for testing."""
-    from deeplens import DiffractiveLens
-    from deeplens.optics.diffractive_surface import Fresnel
+    from end2end_imaging import DiffractiveLens
+    from end2end_imaging.optics.diffractive_surface import Fresnel
 
     old_dtype = torch.get_default_dtype()
     lens = DiffractiveLens()

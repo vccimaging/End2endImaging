@@ -7,4 +7,4 @@ python3 -m pytest test/ -v
 pytest test/test_ray.py -v
 
 # Run with coverage
-pytest test/ --cov=deeplens --cov-report=term-missing
+pytest test/ --cov=end2end_imaging --cov-report=term-missing

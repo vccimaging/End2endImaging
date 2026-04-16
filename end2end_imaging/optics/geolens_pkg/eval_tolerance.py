@@ -40,7 +40,7 @@ class GeoLensTolerance:
       errors to predict yield and worst-case performance.
 
     This class is not instantiated directly; it is mixed into
-    :class:`~deeplens.optics.geolens.GeoLens`.
+    :class:`~end2end_imaging.optics.geolens.GeoLens`.
 
     References:
         Jun Dai et al., "Tolerance-Aware Deep Optics,"

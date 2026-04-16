@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import torch
 from torchvision.utils import save_image
 
-from deeplens import GeoLens
+from end2end_imaging import GeoLens
 
 
 def calculate_wavefield(lens):

@@ -1,4 +1,4 @@
-"""Tests for deeplens/optics/geolens_pkg/optim.py — GeoLensOptim mixin.
+"""Tests for end2end_imaging/optics/geolens_pkg/optim.py — GeoLensOptim mixin.
 
 All methods are tested via GeoLens instances (mixin architecture).
 """
@@ -126,7 +126,7 @@ class TestSampleRays:
 
     def test_sample_ring_arm_rays_returns_ray(self, sample_singlet_lens):
         """sample_ring_arm_rays returns a Ray object with correct shape."""
-        from deeplens.optics.light import Ray
+        from end2end_imaging.optics.light import Ray
 
         lens = sample_singlet_lens
         ray = lens.sample_ring_arm_rays(num_ring=4, num_arm=4, spp=64)

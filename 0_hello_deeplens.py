@@ -7,7 +7,7 @@ Technical Paper:
     [2] Congli Wang, Ni Chen, and Wolfgang Heidrich, "dO: A differentiable engine for Deep Lens design of computational imaging systems," IEEE TCI 2023.
 """
 
-from deeplens import GeoLens
+from end2end_imaging import GeoLens
 
 # lens = GeoLens(filename="./datasets/lenses/camera/ef35mm_f2.0.json")
 # lens = GeoLens(filename="./datasets/lenses/camera/ef35mm_f2.0.zmx")

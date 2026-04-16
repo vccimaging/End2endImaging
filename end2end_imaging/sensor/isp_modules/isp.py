@@ -12,7 +12,7 @@ Reference:
 import torch
 import torch.nn as nn
 
-from deeplens.sensor.isp_modules import (
+from end2end_imaging.sensor.isp_modules import (
     AntiAliasingFilter,
     AutoWhiteBalance,
     BlackLevelCompensation,
