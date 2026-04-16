@@ -1658,9 +1658,13 @@ class GeoLensEval:
                 - **chief_ray_o**: Origins, shape ``[N, 3]``.
                 - **chief_ray_d**: Unit directions, shape ``[N, 3]``.
         """
-        if isinstance(rfov, float) and rfov > 0:
-            rfov = torch.linspace(0, rfov, 2, device=self.device)
-        rfov = rfov.to(self.device)
+        if isinstance(rfov, (int, float)):
+            if rfov > 0:
+                rfov = torch.linspace(0, rfov, 2, device=self.device)
+            else:
+                rfov = torch.tensor([float(rfov)], device=self.device)
+        else:
+            rfov = rfov.to(self.device)
 
         if not isinstance(depth, torch.Tensor):
             depth = torch.tensor(depth, device=self.device).repeat(len(rfov))
