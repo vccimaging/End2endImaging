@@ -1,49 +1,59 @@
 # End2endImaging
 
-**End2endImaging** is a differentiable optical lens simulator for (1) automated optical design, (2) end-to-end optics-vision co-design, and (3) photorealistic image simulation. It helps researchers build custom differentiable optical systems and computational imaging pipelines with minimal effort.
+**End2endImaging** is an end-to-end differentiable computational imaging framework. It models the full camera pipeline — optics, sensor, and image processing — as a single differentiable computation graph built on PyTorch, enabling joint optimization of hardware and algorithms.
 
 <div style="text-align:center;">
-    <img src="assets/logo.png"/>
+    <img src="assets/pipeline.jpg"/>
 </div>
 
 <p align="center">
-    <a href="https://vccimaging.org/DeepLens/">Docs</a> •
-    <a href="https://github.com/singer-yang/DeepLens-tutorials">Tutorials</a> •
-    <a href="#community">Community</a>
+    <a href="https://vccimaging.github.io/End2endImaging/">Docs</a> •
+    <a href="#community">Community</a> •
+    <a href="#citation">Citation</a>
 </p>
-
-```python
-from end2end_imaging import GeoLens
-
-lens = GeoLens(filename="./datasets/lenses/cellphone/cellphone80deg.json")
-lens.analysis(full_eval=True, render=True)
-```
-
-## Mission
-
-1. Next-generation **optical design software** enhanced by differentiable optimization.
-2. Next-generation **computational cameras** integrating optical encoding with deep learning decoding.
 
 ## Features
 
-1. **Differentiable Optics.** Leverages gradient backpropagation and differentiable optimization, demonstrating outstanding optimization power compared to classical optical design.
-2. **Automated Lens Design.** Enables automated lens design using curriculum learning, optical regularization losses, and GPU acceleration.
-3. **Hybrid Refractive-Diffractive Optics.** Supports accurate simulation and optimization of hybrid refractive-diffractive lenses (e.g., DOEs, metasurfaces).
-4. **Accurate Image Simulation.** Delivers photorealistic, spatially-varying image simulations, verified against commercial software and real-world experiments.
-5. **Optics-Vision Co-Design.** Supports end-to-end differentiability from optics, sensor, and ISP to vision algorithms, enabling comprehensive optics-vision co-design.
+### End-to-End Differentiable Pipeline
 
-Additional features (available via collaboration):
+The core of End2endImaging is the `Camera` class, which composes a lens model and a sensor into a fully differentiable imaging pipeline. Gradients flow from downstream task losses (reconstruction, detection, classification) back through the neural network, sensor noise model, ISP, and into the optical design parameters — enabling hardware-software co-optimization.
 
-1. **Polarization Ray Tracing.** Provides polarization ray tracing and differentiable optimization of coating films.
-2. **Non-Sequential Ray Tracing.** Includes a differentiable non-sequential ray tracing model for stray light analysis and optimization.
-3. **Kernel Acceleration.** Achieves >10x speedup and >90% GPU memory reduction with custom GPU kernels across NVIDIA and AMD platforms.
-4. **Distributed Optimization.** Supports distributed simulation and optimization for billions of rays and high-resolution (>100k x 100k) diffractive computations.
+#### DeepLens: Differentiable Optics
+
+The [`deeplens/`](end2end_imaging/deeplens/) module provides differentiable lens models for optical simulation and design:
+
+- **GeoLens** — Multi-element refractive lens via differentiable ray tracing. Supports Zemax/Code V/JSON I/O, automated lens design, Seidel aberration analysis, and tolerancing.
+- **HybridLens** — Refractive lens + diffractive optical element (DOE). Coherent ray tracing + Angular Spectrum Method propagation.
+- **DiffractiveLens** — Pure wave-optics lens using diffractive surfaces and scalar diffraction.
+- **PSFNetLens** — Neural surrogate wrapping a GeoLens with an MLP for fast PSF prediction.
+- **ParaxialLens** — Thin-lens model for depth-of-field and bokeh simulation.
+
+#### Sensor & ISP Simulation
+Physically accurate sensor simulation with Bayer CFA, read/shot noise model, and a composable ISP pipeline (black level, white balance, demosaicing, color correction, gamma, tone mapping). Each stage is a differentiable `torch.nn.Module`.
+
+#### Neural Networks
+Built-in reconstruction networks (NAFNet, UNet, Restormer) for restoring clean images from degraded sensor captures, plus PSF surrogate networks (MLP, SIREN) for fast PSF prediction during training.
+
+### Additional features (available upon inquiry):
+
+- **Kernel Acceleration.** >10x speedup and >90% GPU memory reduction with custom GPU kernels (NVIDIA & AMD).
+- **Distributed Optimization.** Distributed simulation for billions of rays and high-resolution (>100k) diffractive computations.
 
 ## Applications
 
-#### 1. Automated lens design
+#### 1. End-to-End Camera Design
 
-Fully automated lens design from scratch. Try it with [AutoLens](https://github.com/vccimaging/AutoLens)!
+Jointly optimize lens optics and neural reconstruction using final image quality (or classification/detection/segmentation) as the objective.
+
+[![paper](https://img.shields.io/badge/NatComm-2024-orange)](https://www.nature.com/articles/s41467-024-50835-7)
+
+<div align="center">
+    <img src="assets/end2end.png" alt="End2End" height="150px"/>
+</div>
+
+#### 2. Automated Lens Design
+
+Fully automated lens design from scratch using curriculum learning and differentiable optimization. Try it with [AutoLens](https://github.com/vccimaging/AutoLens)!
 
 [![paper](https://img.shields.io/badge/NatComm-2024-orange)](https://www.nature.com/articles/s41467-024-50835-7) [![quickstart](https://img.shields.io/badge/Project-green)](https://github.com/vccimaging/AutoLens)
 
@@ -52,17 +62,17 @@ Fully automated lens design from scratch. Try it with [AutoLens](https://github.
     <img src="assets/autolens2.gif" alt="AutoLens" height="270px"/>
 </div>
 
-#### 2. End-to-End lens design
+#### 3. Hybrid Refractive-Diffractive Lens Design
 
-Lens-network co-design from scratch using final images (or classification/detection/segmentation) as objective.
+Design hybrid refractive-diffractive lenses with a new ray-wave model.
 
-[![paper](https://img.shields.io/badge/NatComm-2024-orange)](https://www.nature.com/articles/s41467-024-50835-7)
+[![report](https://img.shields.io/badge/SiggraphAsia-2024-orange)](https://arxiv.org/abs/2406.00834)
 
 <div align="center">
-    <img src="assets/end2end.png" alt="End2End" height="150px"/>
+    <img src="assets/hybridlens.png" alt="HybridLens" height="200px"/>
 </div>
 
-#### 3. Implicit Lens Representation
+#### 4. Implicit Lens Representation
 
 A surrogate network for fast (aberration + defocus) image simulation.
 
@@ -70,16 +80,6 @@ A surrogate network for fast (aberration + defocus) image simulation.
 
 <div align="center">
     <img src="assets/implicit_net.png" alt="Implicit" height="150px"/>
-</div>
-
-#### 4. Hybrid Refractive-Difractive Lens Model
-
-Design hybrid refractive-diffractive lenses with a new ray-wave model.
-
-[![report](https://img.shields.io/badge/SiggraphAsia-2024-orange)](https://arxiv.org/abs/2406.00834)
-
-<div align="center">
-    <img src="assets/hybridlens.png" alt="Implicit" height="200px"/>
 </div>
 
 ## Installation
@@ -113,19 +113,18 @@ Run the demo code:
 python 0_hello_deeplens.py
 ```
 
-The repo is structured around three decoupled modules (``optics``, ``sensor``, and ``network``):
+## Project Structure
 
 ```
 End2endImaging/
 │
 ├── end2end_imaging/
-│   ├── deeplens/ (optics simulation and lens models)
-│   ├── sensor/ (sensor + ISP simulation)
-│   ├── network/ (surrogate and reconstruction networks)
-│   ├── camera.py (composes lens and sensor into a camera simulator)
-│   └── ...
+│   ├── camera.py          # Camera: composes lens + sensor into a differentiable pipeline
+│   ├── deeplens/          # Differentiable optics (lens models, surfaces, ray tracing)
+│   ├── sensor/            # Sensor simulation (Bayer CFA, noise, ISP pipeline)
+│   └── network/           # Neural networks (reconstruction, PSF surrogates, losses)
 │
-├── 0_hello_deeplens.py (code tutorials)
+├── 0_hello_deeplens.py    # Code tutorials
 ├── ...
 └── write_your_own_code.py
 ```
