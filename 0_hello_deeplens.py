@@ -25,7 +25,7 @@ def main():
     # 1. Build the camera pipeline (lens + sensor)
     # -----------------------------------------------
     camera = Camera(
-        lens_file="./datasets/lenses/cellphone/cellphone80deg.json",
+        lens_file="./datasets/lenses/camera/rf50mm_f1.8.json",
         sensor_file="./datasets/sensors/canon_r6.json",
         lens_type="geolens",
         sensor_type="rgb",

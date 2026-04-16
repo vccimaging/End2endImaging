@@ -9,10 +9,8 @@
 
 **End2endImaging** is an open-source framework for **end-to-end differentiable computational imaging**. It models the full camera pipeline — differentiable optics, sensor simulation, and neural image processing — as a single computation graph in PyTorch, enabling **optics-algorithm co-design** through gradient-based optimization.
 
-Use End2endImaging for **end-to-end optics design**, **automated lens design**, **differentiable ray tracing**, **computational photography**, and **optics-network co-optimization**.
-
 <div style="text-align:center;">
-    <img src="assets/pipeline.jpg" alt="End2endImaging pipeline: differentiable optics, sensor simulation, and neural network for end-to-end computational imaging"/>
+    <img src="assets/pipeline.jpg" alt="End2endImaging pipeline: differentiable optics, sensor simulation, and neural network for end-to-end computational imaging" width="80%"/>
 </div>
 
 <p align="center">
