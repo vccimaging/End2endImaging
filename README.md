@@ -9,7 +9,7 @@
 
 **End2endImaging** is an open-source framework for **end-to-end differentiable computational imaging**. It models the full camera pipeline — differentiable optics, sensor simulation, and neural image processing — as a single computation graph in PyTorch, enabling **optics-algorithm co-design** through gradient-based optimization.
 
-<div style="text-align:center;">
+<div align="center">
     <img src="assets/pipeline.jpg" alt="End2endImaging pipeline: differentiable optics, sensor simulation, and neural network for end-to-end computational imaging" width="80%"/>
 </div>
 
@@ -19,13 +19,11 @@
     <a href="#citation">Citation</a>
 </p>
 
-## Features
-
-### End-to-End Differentiable Pipeline
+## End-to-End Differentiable Pipeline
 
 The core of End2endImaging is the `Camera` class, which composes a lens model and a sensor into a fully differentiable imaging pipeline. Gradients flow from downstream task losses (reconstruction, detection, classification) back through the neural network, sensor noise model, ISP, and into the optical design parameters — enabling hardware-software co-optimization.
 
-#### [DeepLens](https://github.com/vccimaging/DeepLens): Differentiable Optics
+#### Differentiable Optics ([DeepLens](https://github.com/vccimaging/DeepLens))
 
 The [`deeplens/`](end2end_imaging/deeplens/) module provides differentiable lens models for optical simulation and design:
 
@@ -41,7 +39,7 @@ Physically accurate sensor simulation with Bayer CFA, read/shot noise model, and
 #### Neural Networks
 Built-in reconstruction networks (NAFNet, UNet, Restormer) for restoring clean images from degraded sensor captures, plus PSF surrogate networks (MLP, SIREN) for fast PSF prediction during training.
 
-### Additional features (available upon inquiry):
+#### Additional features (available upon inquiry):
 
 - **Kernel Acceleration.** >10x speedup and >90% GPU memory reduction with custom GPU kernels (NVIDIA & AMD).
 - **Distributed Optimization.** Distributed simulation for billions of rays and high-resolution (>100k) diffractive computations.
@@ -165,6 +163,4 @@ If you use this project in your research, please cite the paper. See more in [Hi
 }
 ```
 
----
-
-<sub>**Keywords:** end-to-end optics design, computational imaging, differentiable optics, differentiable ray tracing, optics-algorithm co-design, computational photography, automated lens design, optical simulation, PSF simulation, image signal processing, diffractive optics, wave optics, PyTorch optics, camera simulation, inverse optical design</sub>
+<!-- Keywords: end-to-end optics design, computational imaging, differentiable optics, differentiable ray tracing, optics-algorithm co-design, computational photography, automated lens design, optical simulation, PSF simulation, image signal processing, diffractive optics, wave optics, PyTorch optics, camera simulation, inverse optical design -->
