@@ -46,6 +46,7 @@ class Sensor(nn.Module):
         # Sensor size and resolution
         self.size = size
         self.res = res
+        self.pixel_size = size[0] / res[0]  # mm per pixel
 
         # ISP: gamma correction only
         self.isp = nn.Sequential(
