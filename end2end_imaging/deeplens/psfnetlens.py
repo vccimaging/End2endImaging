@@ -19,16 +19,16 @@ from transformers import get_cosine_schedule_with_warmup
 
 from .geolens import GeoLens
 from .lens import Lens
-from end2end_imaging.network.surrogate import MLP
-from end2end_imaging.network.surrogate.psfnet_mplconv import PSFNet_MLPConv
-from .config import DEPTH, PSF_KS
-from .imgsim import conv_psf_pixel, conv_psf_pixel_high_res, rotate_psf
+from .surrogate import MLP
+from .surrogate.psfnet_mplconv import PSFNet_MLPConv
+from .config import DEFAULT_WAVE, DEPTH, PSF_KS, WAVE_RGB
+from .imgsim import rotate_psf, splat_psf_per_pixel
 
 
 class PSFNetLens(Lens):
     """Neural surrogate lens that predicts PSFs via a small MLP/MLPConv network.
 
-    Wraps a :class:`~end2end_imaging.deeplens.geolens.GeoLens` with a neural network
+    Wraps a :class:`~deeplens.geolens.GeoLens` with a neural network
     trained to predict RGB PSFs from ``(fov, depth, focus_distance)`` inputs.
     After training, PSF prediction is ~100× faster than ray tracing, making
     it suitable for real-time applications and large-scale optimisation.
@@ -52,6 +52,9 @@ class PSFNetLens(Lens):
         psf_chan=3,
         model_name="mlp_conv",
         kernel_size=64,
+        primary_wvln=DEFAULT_WAVE,
+        wvln_rgb=WAVE_RGB,
+        obj_depth=DEPTH,
     ):
         """Initialize a PSF network lens.
 
@@ -63,12 +66,29 @@ class PSFNetLens(Lens):
             psf_chan (int): Number of output channels.
             model_name (str): Name of the model.
             kernel_size (int): Kernel size.
+            primary_wvln (float, optional): Primary design wavelength [µm].
+                Used as fallback when a method is called without an explicit
+                ``wvln``.  Defaults to ``DEFAULT_WAVE``.
+            wvln_rgb (sequence of float, optional): Three wavelengths used
+                for RGB computations, ordered ``[R, G, B]`` in µm.  Defaults
+                to ``WAVE_RGB``.
+            obj_depth (float, optional): Default object depth [mm], used
+                when a method is called without an explicit ``depth``.
+                Defaults to ``DEPTH``.
         """
-        super().__init__()
+        super().__init__(
+            primary_wvln=primary_wvln, wvln_rgb=wvln_rgb, obj_depth=obj_depth
+        )
 
         # Load lens (sensor_size and sensor_res are read from the lens file)
         self.lens_path = lens_path
-        self.lens = GeoLens(filename=lens_path, device=self.device)
+        self.lens = GeoLens(
+            filename=lens_path,
+            device=self.device,
+            primary_wvln=primary_wvln,
+            wvln_rgb=wvln_rgb,
+            obj_depth=obj_depth,
+        )
         self.foclen = self.lens.foclen
         self.rfov = self.lens.rfov
 
@@ -389,18 +409,20 @@ class PSFNetLens(Lens):
             ]
         return psf
 
-    def psf_map_rgb(self, grid=(11, 11), depth=DEPTH, ks=PSF_KS, **kwargs):
+    def psf_map_rgb(self, grid=(11, 11), depth=None, ks=PSF_KS, **kwargs):
         """Compute monochrome PSF map.
 
         Args:
             grid (tuple, optional): Grid size. Defaults to (11, 11), meaning 11x11 grid.
             wvln (float, optional): Wavelength. Defaults to DEFAULT_WAVE.
-            depth (float, optional): Depth of the object. Defaults to DEPTH.
+            depth (float, optional): Depth of the object. When ``None`` (default),
+                falls back to ``self.obj_depth``.
             ks (int, optional): Kernel size. Defaults to PSF_KS, meaning PSF_KS x PSF_KS kernel size.
 
         Returns:
             psf_map: Shape of [grid, grid, 3, ks, ks].
         """
+        depth = self.obj_depth if depth is None else depth
         # PSF map grid
         points = self.point_source_grid(depth=depth, grid=grid, center=True)
         points = points.reshape(-1, 3).to(self.device)
@@ -414,7 +436,7 @@ class PSFNetLens(Lens):
     # Image simulation
     # ==================================================
     @torch.no_grad()
-    def render_rgbd(self, img, depth, foc_dist, ks=64, high_res=False):
+    def render_rgbd(self, img, depth, foc_dist, ks=64, high_res=False, chunk_size=256):
         """Render image with aif image and depth map. Receive [N, C, H, W] image.
 
         Args:
@@ -423,6 +445,7 @@ class PSFNetLens(Lens):
             foc_dist (tensor): [1], unit in mm, range from [-20000, -200]
             ks (int): kernel size
             high_res (bool): whether to use high resolution rendering
+            chunk_size (int): tile size used when ``high_res`` is True
 
         Returns:
             render (tensor): [1, C, H, W]
@@ -445,10 +468,10 @@ class PSFNetLens(Lens):
         points = torch.stack((x, y, depth), -1).float()
         psf = self.psf_rgb(points=points, ks=ks)
 
-        # Render image with per-pixel PSF convolution
+        # Render image with per-pixel PSF splatting
         if high_res:
-            render = conv_psf_pixel_high_res(img, psf)
+            render = splat_psf_per_pixel(img, psf, chunk_size=chunk_size)
         else:
-            render = conv_psf_pixel(img, psf)
+            render = splat_psf_per_pixel(img, psf)
 
         return render

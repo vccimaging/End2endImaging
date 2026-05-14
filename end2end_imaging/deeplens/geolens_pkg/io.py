@@ -25,9 +25,8 @@ import math
 
 import torch
 
-from ..config import WAVE_RGB
 from ..geometric_surface import Aperture, Aspheric, Cubic, Plane, Spheric, ThinLens
-from ..phase_surface import Phase
+from ..phase_surface import Binary2Phase, Phase
 
 
 class GeoLensIO:
@@ -41,7 +40,7 @@ class GeoLensIO:
     * **Code V .seq**: Code V sequential format (read-only).
 
     This class is not instantiated directly; it is mixed into
-    :class:`~end2end_imaging.deeplens.geolens.GeoLens`.
+    :class:`~deeplens.geolens.GeoLens`.
     """
 
     def read_lens_zmx(self, filename="./test.zmx"):
@@ -221,7 +220,7 @@ class GeoLensIO:
     GCAT OSAKAGASCHEMICAL MISC
     XFLN 0. 0. 0.
     YFLN 0.0 {0.707 * self.rfov_eff * 57.3} {0.99 * self.rfov_eff * 57.3}
-    WAVL {WAVE_RGB[2]:.7f} {WAVE_RGB[1]:.7f} {WAVE_RGB[0]:.7f}
+    WAVL {self.wvln_rgb[2]:.7f} {self.wvln_rgb[1]:.7f} {self.wvln_rgb[0]:.7f}
     RAIM 0 0 1 1 0 0 0 0 0
     PUSH 0 0 0 0 0 0
     SDMA 0 1 0
@@ -783,6 +782,9 @@ class GeoLensIO:
                 elif surf_dict["type"] == "Phase":
                     s = Phase.init_from_dict(surf_dict)
 
+                elif surf_dict["type"] == "Binary2Phase":
+                    s = Binary2Phase.init_from_dict(surf_dict)
+
                 elif surf_dict["type"] == "Plane":
                     s = Plane.init_from_dict(surf_dict)
 
@@ -803,6 +805,7 @@ class GeoLensIO:
                         f"Surface type {surf_dict['type']} is not implemented in GeoLens.read_lens_json()."
                     )
 
+                s.is_aperture = bool(surf_dict.get("is_aperture", False))
                 self.surfaces.append(s)
                 d += surf_dict["d_next"]
 
@@ -838,10 +841,13 @@ class GeoLensIO:
         data["r_sensor"] = self.r_sensor
         data["(d_sensor)"] = round(self.d_sensor.item(), 4)
         data["(sensor_size)"] = [round(i, 4) for i in self.sensor_size]
+        data["sensor_res"] = list(self.sensor_res)
         data["surfaces"] = []
         for i, s in enumerate(self.surfaces):
             surf_dict = {"idx": i}
             surf_dict.update(s.surf_dict())
+            if getattr(s, "is_aperture", False):
+                surf_dict["is_aperture"] = True
             if i < len(self.surfaces) - 1:
                 surf_dict["d_next"] = round(
                     self.surfaces[i + 1].d.item() - self.surfaces[i].d.item(), 4

@@ -8,10 +8,9 @@ import torch
 from end2end_imaging.deeplens.imgsim import (
     conv_psf,
     conv_psf_map,
-    conv_psf_pixel,
+    splat_psf_per_pixel,
     conv_psf_depth_interp,
     conv_psf_map_depth_interp,
-    crop_psf_map,
     interp_psf_map,
     rotate_psf,
 )
@@ -106,19 +105,19 @@ class TestConvPSFMap:
         assert torch.allclose(result_map, result_single, atol=0.1)
 
 
-class TestConvPSFPixel:
-    """Test per-pixel PSF convolution."""
+class TestSplatPSFPerPixel:
+    """Test per-pixel PSF splatting."""
 
-    def test_conv_psf_pixel_shape(self, device_auto):
+    def test_splat_psf_per_pixel_shape(self, device_auto):
         """Output should have same shape as input."""
         img = torch.rand(1, 3, 32, 32, device=device_auto)
-        
+
         # Per-pixel PSF: [H, W, C, ks, ks]
         psf = torch.rand(32, 32, 3, 5, 5, device=device_auto)
         psf = psf / psf.sum(dim=(-1, -2), keepdim=True)
-        
-        result = conv_psf_pixel(img, psf)
-        
+
+        result = splat_psf_per_pixel(img, psf)
+
         assert result.shape == img.shape
 
 
@@ -212,43 +211,6 @@ class TestConvPSFMapDepthInterp:
         assert result.shape == img.shape
         assert not torch.isnan(result).any()
 
-    """Test PSF map cropping."""
-
-    def test_crop_psf_map_shape(self, device_auto):
-        """Should crop PSF patches correctly."""
-        grid = 4
-        ks = 21
-        ks_crop = 11
-        
-        psf_map = torch.rand(3, grid * ks, grid * ks, device=device_auto)
-        
-        cropped = crop_psf_map(psf_map, grid=grid, ks_crop=ks_crop)
-        
-        assert cropped.shape == (3, grid * ks_crop, grid * ks_crop)
-
-    def test_crop_psf_map_center(self, device_auto):
-        """Cropping should take center of each patch."""
-        grid = 2
-        ks = 11
-        ks_crop = 5
-        
-        # Create PSF map with known values
-        psf_map = torch.zeros(3, grid * ks, grid * ks, device=device_auto)
-        # Put value in center of each patch
-        for i in range(grid):
-            for j in range(grid):
-                center_y = i * ks + ks // 2
-                center_x = j * ks + ks // 2
-                psf_map[:, center_y, center_x] = 1.0
-        
-        cropped = crop_psf_map(psf_map, grid=grid, ks_crop=ks_crop)
-        
-        # Center values should be preserved
-        for i in range(grid):
-            for j in range(grid):
-                center_y = i * ks_crop + ks_crop // 2
-                center_x = j * ks_crop + ks_crop // 2
-                assert cropped[0, center_y, center_x] == 1.0
 
 
 class TestInterpPSFMap:

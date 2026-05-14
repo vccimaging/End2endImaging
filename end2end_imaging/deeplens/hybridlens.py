@@ -20,6 +20,7 @@ import torch.nn.functional as F
 
 from .config import (
     DEFAULT_WAVE,
+    DEPTH,
     PSF_KS,
     SPP_COHERENT,
     WAVE_RGB,
@@ -43,7 +44,7 @@ from .light import AngularSpectrumMethod
 class HybridLens(Lens):
     """Hybrid refractive-diffractive lens using a differentiable ray–wave model.
 
-    Combines a :class:`~end2end_imaging.deeplens.geolens.GeoLens` (refractive module)
+    Combines a :class:`~deeplens.geolens.GeoLens` (refractive module)
     with a diffractive optical element (DOE) placed behind it.  The pipeline
     is:
 
@@ -75,6 +76,9 @@ class HybridLens(Lens):
         filename=None,
         device=None,
         dtype=torch.float64,
+        primary_wvln=DEFAULT_WAVE,
+        wvln_rgb=WAVE_RGB,
+        obj_depth=DEPTH,
     ):
         """Initialize a hybrid refractive-diffractive lens.
 
@@ -82,8 +86,23 @@ class HybridLens(Lens):
             filename (str, optional): Path to the lens configuration JSON file. Defaults to None.
             device (str, optional): Computation device ('cpu' or 'cuda'). Defaults to None.
             dtype (torch.dtype, optional): Data type for computations. Defaults to torch.float64.
+            primary_wvln (float, optional): Primary design wavelength [µm].
+                Used as fallback when a method is called without an explicit
+                ``wvln``.  Defaults to ``DEFAULT_WAVE``.
+            wvln_rgb (sequence of float, optional): Three wavelengths used
+                for RGB computations, ordered ``[R, G, B]`` in µm.  Defaults
+                to ``WAVE_RGB``.
+            obj_depth (float, optional): Default object depth [mm], used
+                when a method is called without an explicit ``depth``.
+                Defaults to ``DEPTH``.
         """
-        super().__init__(device=device, dtype=dtype)
+        super().__init__(
+            device=device,
+            dtype=dtype,
+            primary_wvln=primary_wvln,
+            wvln_rgb=wvln_rgb,
+            obj_depth=obj_depth,
+        )
 
         # Load lens file
         if filename is not None:
@@ -141,9 +160,12 @@ class HybridLens(Lens):
                 raise ValueError(f"Unsupported DOE parameter model: {doe_param_model}")
             self.doe = doe
 
-        # Add a Plane/Phase surface to GeoLens (DOE placeholder)
-        r_doe = float(np.sqrt(doe.w**2 + doe.h**2) / 2)
-        geolens.surfaces.append(Plane(d=doe.d.item(), r=r_doe, mat2="air"))
+        # Add a Plane/Phase surface to GeoLens (DOE placeholder).
+        # Match the DOE's actual aperture (square vs circular) so that rays
+        # outside the DOE region are correctly culled at the placeholder.
+        geolens.surfaces.append(
+            Plane(d=doe.d.item(), r=doe.r, mat2="air", is_square=doe.is_square)
+        )
         # r_doe = float(np.sqrt(doe.w**2 + doe.h**2) / 2)
         # geolens.surfaces.append(Phase(r=r_doe, d=doe.d))
         self.geolens = geolens
@@ -254,7 +276,7 @@ class HybridLens(Lens):
     # =====================================================================
     # PSF-related functions
     # =====================================================================
-    def doe_field(self, point, wvln=DEFAULT_WAVE, spp=SPP_COHERENT):
+    def doe_field(self, point, wvln=None, spp=SPP_COHERENT):
         """Compute the complex wave field at the DOE plane via coherent ray tracing.
 
         Similar to ``GeoLens.pupil_field()``, but evaluates the field at the
@@ -266,8 +288,8 @@ class HybridLens(Lens):
             point (torch.Tensor): Point source position, shape ``(3,)`` or
                 ``(1, 3)`` as ``[x, y, z]`` in normalised sensor coordinates
                 for x/y and mm for z.
-            wvln (float, optional): Wavelength in [um].  Defaults to
-                ``DEFAULT_WAVE``.
+            wvln (float, optional): Wavelength in µm.  When ``None`` (default),
+                falls back to ``self.primary_wvln``.
             spp (int, optional): Number of rays to sample.  Must be
                 >= 1,000,000 for accurate coherent simulation.  Defaults to
                 ``SPP_COHERENT``.
@@ -283,6 +305,7 @@ class HybridLens(Lens):
             AssertionError: If *spp* < 1,000,000 or the default dtype is not
                 ``float64``.
         """
+        wvln = self.primary_wvln if wvln is None else wvln
         assert spp >= 1_000_000, (
             "Coherent ray tracing spp is too small, "
             "which may lead to inaccurate simulation."
@@ -310,7 +333,7 @@ class HybridLens(Lens):
 
         # Ray tracing to the DOE plane
         ray = geolens.sample_from_points(points=point_obj, num_rays=spp, wvln=wvln)
-        ray.coherent = True
+        ray.is_coherent = True
         ray, _ = geolens.trace(ray)
         ray = ray.prop_to(doe.d)
 
@@ -334,7 +357,7 @@ class HybridLens(Lens):
         self,
         points=[0.0, 0.0, -10000.0],
         ks=PSF_KS,
-        wvln=DEFAULT_WAVE,
+        wvln=None,
         spp=SPP_COHERENT,
     ):
         """Compute a single-point monochromatic PSF using the ray-wave model.
@@ -356,8 +379,8 @@ class HybridLens(Lens):
             ks (int or None, optional): Output PSF patch size.  If ``None``,
                 returns the central quarter of the full-sensor intensity.
                 Defaults to ``PSF_KS``.
-            wvln (float, optional): Wavelength in [um].  Defaults to
-                ``DEFAULT_WAVE``.
+            wvln (float, optional): Wavelength in µm.  When ``None`` (default),
+                falls back to ``self.primary_wvln``.
             spp (int, optional): Number of coherent rays to sample.  Defaults
                 to ``SPP_COHERENT``.
 
@@ -369,6 +392,7 @@ class HybridLens(Lens):
             ValueError: If the default dtype is not ``float64`` (call
                 :meth:`double` first).
         """
+        wvln = self.primary_wvln if wvln is None else wvln
         # Check double precision
         if not torch.get_default_dtype() == torch.float64:
             raise ValueError(
@@ -452,7 +476,14 @@ class HybridLens(Lens):
     # Visualization
     # =====================================================================
     @torch.no_grad()
-    def draw_layout(self, save_name="./DOELens.png", depth=-10000.0, ax=None, fig=None):
+    def draw_layout(
+        self,
+        save_name="./DOELens.png",
+        depth=-10000.0,
+        ax=None,
+        fig=None,
+        dpi=600,
+    ):
         """Draw the hybrid-lens layout with ray paths and wave-propagation arcs.
 
         Renders the refractive elements via ``GeoLens.draw_lens_2d()``, traces
@@ -469,6 +500,8 @@ class HybridLens(Lens):
                 into.  If ``None``, a new figure is created and saved.
             fig (matplotlib.figure.Figure, optional): Pre-existing figure.
                 Required when *ax* is provided.
+            dpi (int, optional): Resolution used when saving a new figure.
+                Defaults to 600.
 
         Returns:
             tuple or None: ``(ax, fig)`` when *ax* was provided; otherwise
@@ -483,6 +516,9 @@ class HybridLens(Lens):
         else:
             save_fig = False
 
+        # Draw DOE as orange Fresnel-style widget
+        self.doe.draw_widget(ax, color="orange")
+
         # Draw light path
         color_list = ["#CC0000", "#006600", "#0066CC"]
         views = [
@@ -491,7 +527,8 @@ class HybridLens(Lens):
             float(np.rad2deg(geolens.rfov) * 0.99),
         ]
         arc_radi_list = [0.1, 0.4, 0.7, 1.0, 1.4, 1.8]
-        num_rays = 7
+        num_rays = 11
+        arc_half_angle = 20
         for i, view in enumerate(views):
             # Draw ray tracing
             ray = geolens.sample_point_source_2D(
@@ -499,7 +536,7 @@ class HybridLens(Lens):
                 fov=view,
                 num_rays=num_rays,
                 entrance_pupil=True,
-                wvln=WAVE_RGB[2 - i],
+                wvln=self.wvln_rgb[2 - i],
             )
             ray.prop_to(-1.0)
 
@@ -529,8 +566,8 @@ class HybridLens(Lens):
                     ray_center_sensor[2] - ray_center_doe[2],
                 )
             )
-            theta1 = chief_theta - 10
-            theta2 = chief_theta + 10
+            theta1 = chief_theta - arc_half_angle
+            theta2 = chief_theta + arc_half_angle
 
             for j in arc_radi_list:
                 arc_radi_j = arc_radi * j
@@ -549,7 +586,7 @@ class HybridLens(Lens):
             # Save figure
             ax.axis("off")
             ax.set_title("DOE Lens")
-            fig.savefig(save_name, bbox_inches="tight", format="png", dpi=600)
+            fig.savefig(save_name, bbox_inches="tight", dpi=dpi)
             plt.close()
         else:
             return ax, fig

@@ -39,7 +39,6 @@ class TestConstraints:
         assert hasattr(lens, "sag2diam_max")
         assert hasattr(lens, "chief_ray_angle_max")
         assert hasattr(lens, "ttl_min")
-        assert hasattr(lens, "obliq_min")
 
     def test_init_constraints_cellphone_vs_camera(
         self, sample_cellphone_lens, sample_camera_lens
@@ -65,7 +64,8 @@ class TestLossFunctions:
         assert "loss_clearance" in loss_dict
         assert "loss_envelope" in loss_dict
         assert "loss_profile" in loss_dict
-        assert "loss_ray_angle" in loss_dict
+        assert "loss_cra" in loss_dict
+        assert "loss_ray_bend" in loss_dict
 
     def test_loss_infocus_scalar(self, sample_singlet_lens):
         """loss_infocus returns a scalar >= 0."""
@@ -96,13 +96,16 @@ class TestLossFunctions:
         assert loss_clearance.item() >= 0
         assert loss_envelope.item() >= 0
 
-    def test_loss_ray_angle_scalar(self, sample_singlet_lens):
-        """loss_ray_angle returns a scalar tensor."""
+    def test_loss_cra_and_ray_bend_scalar(self, sample_singlet_lens):
+        """loss_cra and loss_ray_bend each return a scalar tensor."""
         lens = sample_singlet_lens
         lens.init_constraints()
-        loss = lens.loss_ray_angle()
-        assert isinstance(loss, torch.Tensor)
-        assert loss.dim() == 0
+        loss_cra = lens.loss_cra()
+        loss_ray_bend = lens.loss_ray_bend()
+        assert isinstance(loss_cra, torch.Tensor)
+        assert loss_cra.dim() == 0
+        assert isinstance(loss_ray_bend, torch.Tensor)
+        assert loss_ray_bend.dim() == 0
 
     def test_loss_mat_scalar(self, sample_singlet_lens):
         """loss_mat returns a scalar >= 0."""
