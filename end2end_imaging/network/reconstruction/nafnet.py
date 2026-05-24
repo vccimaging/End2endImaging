@@ -88,19 +88,22 @@ class NAFNet(nn.Module):
         # Initialize weights  
         self.initialize_weights()  
 
-    def initialize_weights(self):  
-        for m in self.modules():  
-            if isinstance(m, nn.Conv2d):  
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')  
-                if m.bias is not None:  
-                    nn.init.constant_(m.bias, 0)  
-            elif isinstance(m, nn.BatchNorm2d):  
-                nn.init.constant_(m.weight, 1)  
-                nn.init.constant_(m.bias, 0)  
-            elif isinstance(m, nn.Linear):  
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')  
-                if m.bias is not None:  
-                    nn.init.constant_(m.bias, 0) 
+    def initialize_weights(self):
+        # NAFNet has no ReLU (uses SimpleGate); kaiming-relu inflates activations by sqrt(2)
+        # at every layer. Use trunc_normal(std=0.02) per the NAFNet paper.
+        for m in self.modules():
+            if isinstance(m, (nn.Conv2d, nn.Linear)):
+                nn.init.trunc_normal_(m.weight, std=0.02)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+        # Zero the final conv so the global residual makes the network an exact identity
+        # on the first `out_chan` input channels at step 0. Training then learns the correction.
+        nn.init.zeros_(self.ending.weight)
+        if self.ending.bias is not None:
+            nn.init.zeros_(self.ending.bias)
 
     def forward(self, inp):
         """Forward pass with global residual connection.
