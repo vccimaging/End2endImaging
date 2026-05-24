@@ -30,6 +30,13 @@ train:
   render_mode: "psf_patch_depth_interp"
   output_type: "rggbif"
 
+# Weights for each loss term. Set to 0 (or omit) to disable.
+# Supported keys: rgb_l1, rgb_perceptual, raw_l1.
+loss:
+  rgb_l1: 1.0
+  rgb_perceptual: 0.5
+  raw_l1: 1.0
+
 train_set:
   dataset: "./datasets/DIV2K_train_HR"
   res: [512, 512]

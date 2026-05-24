@@ -35,6 +35,9 @@ from end2end_imaging.network import (
 )
 from end2end_imaging.utils import batch_psnr, batch_ssim, setup_experiment
 
+# Defaults preserve the historical behavior if a config omits the `loss:` block.
+DEFAULT_LOSS_WEIGHTS = {"rgb_l1": 1.0, "rgb_perceptual": 0.5, "raw_l1": 1.0}
+
 logger = logging.getLogger(__name__)
 
 
@@ -57,6 +60,7 @@ class Trainer:
         self._init_data(args["train_set"], args["eval_set"])
         self._init_depth_estimator(args["depth_estimator"])
         self._init_model(args["network"], args["train"])
+        self._init_loss(args.get("loss", DEFAULT_LOSS_WEIGHTS))
 
     def _init_camera(self, camera_args):
         """Initialize the camera (lens + sensor)."""
@@ -109,8 +113,30 @@ class Trainer:
         self.output_type = train_args["output_type"]
 
         self.l1_loss = nn.L1Loss()
-        self.lpips_loss = PerceptualLoss(device=self.device)
         self.lpips_metric = lpips.LPIPS(net="alex").to(self.device)
+
+    def _init_loss(self, loss_cfg):
+        """Build the loss term registry from a ``{name: weight}`` config dict.
+
+        Recognized keys:
+            - ``rgb_l1``       : L1 in sRGB after ISP
+            - ``rgb_perceptual``: VGG16-feature MSE in sRGB
+            - ``raw_l1``       : L1 in the 4-channel RGGB output space
+
+        Any key absent from ``loss_cfg`` (or set to 0) is skipped — no
+        backbone is allocated for it. Add new term branches in
+        :meth:`compute_loss` and register them by name here.
+        """
+        unknown = set(loss_cfg) - {"rgb_l1", "rgb_perceptual", "raw_l1"}
+        if unknown:
+            raise ValueError(f"Unknown loss term(s): {sorted(unknown)}")
+        self.loss_weights = {k: float(v) for k, v in loss_cfg.items() if float(v) != 0.0}
+        # Only build the VGG backbone if the perceptual term is actually used.
+        if self.loss_weights.get("rgb_perceptual", 0.0) != 0.0:
+            self.lpips_loss = PerceptualLoss(device=self.device)
+        else:
+            self.lpips_loss = None
+        logger.info(f"Active loss terms: {self.loss_weights}")
 
     def _init_data(self, train_set_config, eval_set_config):
         """Initialize data loaders."""
@@ -162,22 +188,29 @@ class Trainer:
         return self.model(inputs)
 
     def compute_loss(self, outputs, targets):
-        """Compute loss between (unclamped) model outputs and RGGB targets."""
+        """Compute the weighted sum of loss terms enabled in ``self.loss_weights``."""
         sensor = self.camera.sensor
         # Intentional ISP-domain augmentation: random gamma/CCM/AWB shared by outputs and targets per step.
         sensor.sample_augmentation()
-        # Clamp only for the gamma-bounded RGB path; raw_loss keeps gradients on saturating pixels.
-        outputs_rgb = sensor.process2rgb(outputs.clamp(0, 1), in_type="rggb")
-        targets_rgb = sensor.process2rgb(targets, in_type="rggb")
+        # Lazy: only compute the sRGB pair if any RGB-domain term is active.
+        rgb_needed = any(k.startswith("rgb_") for k in self.loss_weights)
+        if rgb_needed:
+            # Clamp only for the gamma-bounded RGB path; raw_l1 keeps gradients on saturating pixels.
+            outputs_rgb = sensor.process2rgb(outputs.clamp(0, 1), in_type="rggb")
+            targets_rgb = sensor.process2rgb(targets, in_type="rggb")
 
-        rgb_loss = self.l1_loss(outputs_rgb, targets_rgb) + 0.5 * self.lpips_loss(outputs_rgb, targets_rgb)
-        raw_loss = self.l1_loss(outputs, targets)
-        loss = rgb_loss + raw_loss
-        return loss, {
-            "rgb_loss": rgb_loss.item(),
-            "raw_loss": raw_loss.item(),
-            "total_loss": loss.item(),
-        }
+        terms = {}
+        if "rgb_l1" in self.loss_weights:
+            terms["rgb_l1"] = self.loss_weights["rgb_l1"] * self.l1_loss(outputs_rgb, targets_rgb)
+        if "rgb_perceptual" in self.loss_weights:
+            terms["rgb_perceptual"] = self.loss_weights["rgb_perceptual"] * self.lpips_loss(outputs_rgb, targets_rgb)
+        if "raw_l1" in self.loss_weights:
+            terms["raw_l1"] = self.loss_weights["raw_l1"] * self.l1_loss(outputs, targets)
+
+        loss = sum(terms.values())
+        loss_dict = {k: v.item() for k, v in terms.items()}
+        loss_dict["total_loss"] = loss.item()
+        return loss, loss_dict
 
     def compute_metrics(self, outputs, targets):
         """Compute scalar PSNR / SSIM / LPIPS in sRGB space."""
