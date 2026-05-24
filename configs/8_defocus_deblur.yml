@@ -8,8 +8,8 @@ camera:
 
 depth_estimator:
   model_name: "depth-anything/Depth-Anything-V2-Small-hf"
-  depth_min_mm: 300.0
-  depth_max_mm: 5000.0
+  depth_min_mm: 1000.0   # 1 m near plane
+  depth_max_mm: 10000.0  # 10 m far plane
   infer_size: 518
 
 network:
@@ -26,7 +26,7 @@ train:
   epochs: 100
   eval_every_n_epochs: 10
   log_every_n_steps: 100
-  lr: 1e-4
+  lr: 5e-4
   render_mode: "psf_patch_depth_interp"
   output_type: "rggbif"
 

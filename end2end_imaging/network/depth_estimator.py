@@ -24,14 +24,17 @@ class DepthAnythingV2Estimator:
     """Estimate metric depth (mm) from sRGB batches using Depth Anything V2.
 
     The HF model returns relative inverse depth (disparity-like, higher = closer).
-    We normalize per-image to ``[0, 1]`` and map linearly into a configured
-    physical range ``[depth_min_mm, depth_max_mm]`` so the result is suitable as
-    the ``depth`` input to :meth:`Camera.render`.
+    We normalize per-image to ``[0, 1]`` and map linearly **in disparity space**
+    into the physical range ``[depth_min_mm, depth_max_mm]``. Because depth is
+    the reciprocal of disparity, equal steps in normalized disparity correspond
+    to much smaller depth steps near the camera than far from it — so near-field
+    depths are densely sampled and far-field depths are coarsely sampled, which
+    matches how defocus PSF spreads change with depth.
 
     Args:
         model_name: HuggingFace model id, e.g. ``"depth-anything/Depth-Anything-V2-Small-hf"``.
-        depth_min_mm: Near-plane distance the model's "closest" pixel maps to.
-        depth_max_mm: Far-plane distance the model's "farthest" pixel maps to.
+        depth_min_mm: Near-plane distance (closest sampled depth).
+        depth_max_mm: Far-plane distance (farthest sampled depth).
         infer_size: Side length (must be a multiple of 14) used for the DA-V2 forward pass.
         device: Compute device. Defaults to CUDA if available.
     """
@@ -97,6 +100,10 @@ class DepthAnythingV2Estimator:
         disp_max = disp.amax(dim=(2, 3), keepdim=True)
         disp_norm = (disp - disp_min) / (disp_max - disp_min + 1e-8)
 
-        # Linear map: disp_norm=1 (closest) → depth_min_mm; disp_norm=0 (farthest) → depth_max_mm.
-        depth_mm = self.depth_max_mm - disp_norm * (self.depth_max_mm - self.depth_min_mm)
+        # Linear interpolation in disparity (1/depth) space, then invert to get depth.
+        # disp_norm=1 (closest) → 1/depth_min ; disp_norm=0 (farthest) → 1/depth_max.
+        disp_near = 1.0 / self.depth_min_mm
+        disp_far = 1.0 / self.depth_max_mm
+        disp_phys = disp_far + disp_norm * (disp_near - disp_far)
+        depth_mm = 1.0 / disp_phys
         return depth_mm
