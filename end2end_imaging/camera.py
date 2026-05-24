@@ -248,7 +248,7 @@ class Camera(Renderer):
             img_lq_ls = []
             for b in range(img_linrgb.shape[0]):
                 img_b = img_linrgb[b, ...].unsqueeze(0)
-                patch_center = data_dict["field_center"][b, ...].unsqueeze(0)
+                patch_center = data_dict["field_center"][b, ...]  # shape (2,), as render_rgbd expects
                 depth = data_dict["depth"][b, ...].unsqueeze(0)
                 img_lq_b = self.lens.render_rgbd(
                     img_b, depth, method="psf_patch", patch_center=patch_center
@@ -276,78 +276,83 @@ class Camera(Renderer):
         # Step 5: Pack output for network training
         # -----------------------------------------------
         data_lq, data_gt = self.pack_output(
-            bayer_gt=bayer_gt,
             bayer_lq=bayer_lq,
+            bayer_gt=bayer_gt,
+            data_dict=data_dict,
             output_type=output_type,
-            **data_dict,
         )
         return data_lq, data_gt
 
-    def pack_output(
-        self,
-        bayer_lq,
-        bayer_gt,
-        iso,
-        iso_scale=1000,
-        output_type="rggbi",
-        **kwargs,
-    ):
+    @staticmethod
+    def output_channels(output_type):
+        """Return ``(in_channels, target_channels)`` required for an ``output_type``.
+
+        Useful to validate ``network.in_chan`` / ``out_chan`` against the
+        packing layout produced by :meth:`pack_output` before model construction.
+
+        Args:
+            output_type (str): One of ``"rgb"``, ``"rggbi"``, ``"rggbif"``.
+
+        Returns:
+            tuple[int, int]: ``(input_channels, target_channels)``.
+
+        Raises:
+            ValueError: If ``output_type`` is unknown.
+        """
+        mapping = {
+            "rgb": (3, 3),
+            "rggbi": (5, 4),
+            "rggbif": (6, 4),
+        }
+        if output_type not in mapping:
+            raise ValueError(f"Unknown output_type: {output_type}")
+        return mapping[output_type]
+
+    def pack_output(self, bayer_lq, bayer_gt, data_dict, output_type="rggbi"):
         """Pack Bayer data into network-ready inputs and targets.
 
         Args:
-            bayer_lq (torch.Tensor): Noisy Bayer image, shape (B, 1, H, W), range [~black_level, 2**bit - 1]
-            bayer_gt (torch.Tensor): Clean Bayer image, shape (B, 1, H, W), range [~black_level, 2**bit - 1]
-            iso (torch.Tensor): ISO values, shape (B,)
-            iso_scale (int): Normalization factor for ISO values. Defaults to 1000.
-            output_type (str): Output format specification. Options:
-                - "rgb": Standard RGB format
-                - "rggbi": RGGB channels + ISO channel (5 channels)
-                - "rggbif": RGGB channels + ISO + field position (6 channels)
-                Defaults to "rggbi".
-            **kwargs: Additional data required for specific output types (e.g., field_center).
+            bayer_lq (torch.Tensor): Noisy Bayer image, shape ``(B, 1, H, W)``,
+                range ``[~black_level, 2**bit - 1]``.
+            bayer_gt (torch.Tensor): Clean Bayer image, shape ``(B, 1, H, W)``,
+                range ``[~black_level, 2**bit - 1]``.
+            data_dict (dict): Per-sample metadata. Required keys by ``output_type``:
+                - ``"rgb"``: none.
+                - ``"rggbi"``: ``"iso"`` (B,); optional ``"iso_scale"`` (default 1000).
+                - ``"rggbif"``: ``"iso"`` (B,), ``"field_center"`` (B, 2); optional ``"iso_scale"``.
+            output_type (str): One of ``"rgb"``, ``"rggbi"``, ``"rggbif"``.
 
         Returns:
-            tuple: (data_lq, data_gt) where:
-                - data_lq (Tensor): Low-quality network input, shape (B, C, H/2, W/2).
-                - data_gt (Tensor): Ground-truth target, shape (B, C, H/2, W/2).
+            tuple: ``(data_lq, data_gt)``.
+                - For ``"rgb"``: shape ``(B, 3, H, W)``.
+                - For ``"rggbi"`` / ``"rggbif"``: shape ``(B, C, H/2, W/2)`` where
+                  ``C = 5`` or ``6`` for ``data_lq`` and ``C = 4`` for ``data_gt``.
         """
         sensor = self.sensor
-        pixel_size = sensor.pixel_size
         device = bayer_lq.device
 
-        # Prepare network input
         if output_type == "rgb":
             rgb_gt = sensor.isp(bayer_gt)
             rgb_lq = sensor.isp(bayer_lq)
             return rgb_lq, rgb_gt
 
-        elif output_type == "rggbi":
-            # RGGB channels
-            rggb_gt = sensor.bayer2rggb(bayer_gt)  # (B, 4, H, W), [0, 1]
-            rggb_lq = sensor.bayer2rggb(bayer_lq)  # (B, 4, H, W), [0, 1]
-            B, _, H, W = rggb_lq.shape
+        iso = data_dict["iso"]
+        iso_scale = data_dict.get("iso_scale", 1000)
 
-            # ISO channel (B, 1, H, W)
-            iso_channel = (iso / iso_scale).view(-1, 1, 1, 1).repeat(1, 1, H, W)
+        rggb_gt = sensor.bayer2rggb(bayer_gt)  # (B, 4, H/2, W/2), [0, 1]
+        rggb_lq = sensor.bayer2rggb(bayer_lq)  # (B, 4, H/2, W/2), [0, 1]
+        B, _, H, W = rggb_lq.shape
+        iso_channel = (iso / iso_scale).view(-1, 1, 1, 1).repeat(1, 1, H, W)
 
-            # Concatenate to RGGBI 5 channels
-            rggbi_lq = torch.cat([rggb_lq, iso_channel], dim=1)
-            return rggbi_lq, rggb_gt
+        if output_type == "rggbi":
+            return torch.cat([rggb_lq, iso_channel], dim=1), rggb_gt
 
-        elif output_type == "rggbif":
-            # RGGB channels
-            rggb_gt = sensor.bayer2rggb(bayer_gt)  # (B, 4, H, W), [0, 1]
-            rggb_lq = sensor.bayer2rggb(bayer_lq)  # (B, 4, H, W), [0, 1]
-            B, _, H, W = rggb_lq.shape
-
-            # ISO channel (B, 1, H, W)
-            iso_channel = (iso / iso_scale).view(-1, 1, 1, 1).repeat(1, 1, H, W)
-
-            # Field channel (B, 1, H, W)
+        if output_type == "rggbif":
+            pixel_size = sensor.pixel_size
             field_channels = []
             for b in range(B):
-                field_center = kwargs["field_center"][b, ...]
-                # After shuffling to rggb, the stride (step size) is 2 * pixel_size
+                field_center = data_dict["field_center"][b, ...]
+                # After shuffling to rggb, the pixel stride is 2 * pixel_size.
                 grid_x, grid_y = torch.meshgrid(
                     torch.linspace(
                         field_center[0] - W * pixel_size,
@@ -363,13 +368,8 @@ class Camera(Renderer):
                     ),
                     indexing="xy",
                 )
-                field_channel = torch.sqrt(grid_x**2 + grid_y**2).unsqueeze(0)
-                field_channels.append(field_channel)
+                field_channels.append(torch.sqrt(grid_x**2 + grid_y**2).unsqueeze(0))
             field_channel = torch.cat(field_channels, dim=0).unsqueeze(1)
+            return torch.cat([rggb_lq, iso_channel, field_channel], dim=1), rggb_gt
 
-            # Concatenate to RGGBIF 6 channels
-            rggbif_lq = torch.cat([rggb_lq, iso_channel, field_channel], dim=1)
-            return rggbif_lq, rggb_gt
-
-        else:
-            raise NotImplementedError(f"Invalid output type: {output_type}")
+        raise NotImplementedError(f"Invalid output type: {output_type}")

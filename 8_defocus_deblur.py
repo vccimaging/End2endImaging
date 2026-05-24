@@ -1,7 +1,12 @@
-"""End-to-end computational photography: train an image restoration network with physically accurate image simulation.
+"""End-to-end defocus deblur + aberration correction with depth-conditioned simulation.
+
+Trains an image restoration network on RGBD inputs: depth is estimated on-the-fly
+from each RGB batch with Depth Anything V2 and used to drive depth-varying PSF
+simulation (`render_mode="psf_patch_depth_interp"`). The normalized depth is also
+fed as an extra input channel to the network so it can learn depth-aware deblurring.
 
 Usage:
-    python 7_comp_photography.py [--config configs/7_comp_photography.yml]
+    python 8_defocus_deblur.py [--config configs/8_defocus_deblur.yml]
 
 Reference:
     [1] Xinge Yang, Chuong Nguyen, Wenbin Wang, Kaizhang Kang, Wolfgang Heidrich, Xiaoxing Li. "Efficient Depth- and Spatially-Varying Image Simulation for Defocus Deblur." ICCV Workshop 2025.
@@ -21,8 +26,17 @@ from torchvision.utils import save_image
 from tqdm import tqdm
 
 from end2end_imaging import Camera
-from end2end_imaging.network import NAFNet, PerceptualLoss, PhotographicDataset
+from end2end_imaging.network import (
+    DepthAnythingV2Estimator,
+    NAFNet,
+    PerceptualLoss,
+    PhotographicDataset,
+)
 from end2end_imaging.utils import batch_psnr, batch_ssim, setup_experiment
+
+# L1-only by default: easier to optimize early. Enable perceptual via the config
+# once pixel loss has converged enough to provide useful gradients through VGG.
+DEFAULT_LOSS_WEIGHTS = {"rgb_l1": 1.0, "rgb_perceptual": 0.0, "raw_l1": 1.0}
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +50,7 @@ def config(config_path):
 
 
 class Trainer:
-    """Single-GPU trainer for end-to-end computational photography."""
+    """Single-GPU trainer for depth-aware defocus deblur."""
 
     def __init__(self, args):
         self.args = args
@@ -44,19 +58,39 @@ class Trainer:
 
         self._init_camera(args["camera"])
         self._init_data(args["train_set"], args["eval_set"])
+        self._init_depth_estimator(args["depth_estimator"])
         self._init_model(args["network"], args["train"])
+        self._init_loss(args.get("loss", DEFAULT_LOSS_WEIGHTS))
 
     def _init_camera(self, camera_args):
-        """Initialize the camera (lens + sensor)."""
+        """Initialize the camera (lens + sensor), refocused per config.
+
+        ``foc_dist`` is in mm, in GeoLens's negative-z object-space convention
+        (``calc_sensor_plane`` ray-traces from a point source at ``depth``).
+        Defaults to -10000 mm = 10 m, which matches the depth far plane; use a
+        very large negative magnitude (e.g. -1.0e6) for focus-at-infinity.
+        """
         self.camera = Camera(
             lens_file=camera_args["lens_file"],
             sensor_file=camera_args["sensor_file"],
             device=self.device,
         )
+        foc_dist = float(camera_args.get("foc_dist", -10000.0))
+        self.camera.lens.refocus(foc_dist=foc_dist)
+        logger.info(f"Lens refocused to foc_dist={foc_dist:.1f} mm")
+
+    def _init_depth_estimator(self, depth_args):
+        """Initialize the off-the-shelf depth estimator (frozen)."""
+        self.depth_estimator = DepthAnythingV2Estimator(
+            model_name=depth_args["model_name"],
+            depth_min_mm=depth_args["depth_min_mm"],
+            depth_max_mm=depth_args["depth_max_mm"],
+            infer_size=depth_args.get("infer_size", 518),
+            device=self.device,
+        )
 
     def _init_model(self, net_args, train_args):
         """Initialize the image restoration model and optimizer."""
-        # Validate channel counts before model construction so a config mismatch fails loudly.
         expected_in, expected_out = Camera.output_channels(train_args["output_type"])
         if net_args["in_chan"] != expected_in or net_args["out_chan"] != expected_out:
             raise ValueError(
@@ -88,8 +122,30 @@ class Trainer:
         self.output_type = train_args["output_type"]
 
         self.l1_loss = nn.L1Loss()
-        self.lpips_loss = PerceptualLoss(device=self.device)
         self.lpips_metric = lpips.LPIPS(net="alex").to(self.device)
+
+    def _init_loss(self, loss_cfg):
+        """Build the loss term registry from a ``{name: weight}`` config dict.
+
+        Recognized keys:
+            - ``rgb_l1``       : L1 in sRGB after ISP
+            - ``rgb_perceptual``: VGG16-feature MSE in sRGB
+            - ``raw_l1``       : L1 in the 4-channel RGGB output space
+
+        Any key absent from ``loss_cfg`` (or set to 0) is skipped — no
+        backbone is allocated for it. Add new term branches in
+        :meth:`compute_loss` and register them by name here.
+        """
+        unknown = set(loss_cfg) - {"rgb_l1", "rgb_perceptual", "raw_l1"}
+        if unknown:
+            raise ValueError(f"Unknown loss term(s): {sorted(unknown)}")
+        self.loss_weights = {k: float(v) for k, v in loss_cfg.items() if float(v) != 0.0}
+        # Only build the VGG backbone if the perceptual term is actually used.
+        if self.loss_weights.get("rgb_perceptual", 0.0) != 0.0:
+            self.lpips_loss = PerceptualLoss(device=self.device)
+        else:
+            self.lpips_loss = None
+        logger.info(f"Active loss terms: {self.loss_weights}")
 
     def _init_data(self, train_set_config, eval_set_config):
         """Initialize data loaders."""
@@ -128,27 +184,42 @@ class Trainer:
             pin_memory=True,
         )
 
+    def add_depth(self, data_dict):
+        """Estimate depth from the batch's RGB and attach it as ``data_dict["depth"]``."""
+        img = data_dict["img"].to(self.device, non_blocking=True)
+        data_dict["img"] = img
+        # Depth estimator outputs positive mm (shape (B, 1, H, W)); detached graph (frozen).
+        data_dict["depth"] = self.depth_estimator.estimate(img)
+        return data_dict
+
     def forward(self, inputs):
         """Run the model forward pass. Outputs are unclamped to preserve gradients."""
         return self.model(inputs)
 
     def compute_loss(self, outputs, targets):
-        """Compute loss between (unclamped) model outputs and RGGB targets."""
+        """Compute the weighted sum of loss terms enabled in ``self.loss_weights``."""
         sensor = self.camera.sensor
         # Intentional ISP-domain augmentation: random gamma/CCM/AWB shared by outputs and targets per step.
         sensor.sample_augmentation()
-        # Clamp only for the gamma-bounded RGB path; raw_loss keeps gradients on saturating pixels.
-        outputs_rgb = sensor.process2rgb(outputs.clamp(0, 1), in_type="rggb")
-        targets_rgb = sensor.process2rgb(targets, in_type="rggb")
+        # Lazy: only compute the sRGB pair if any RGB-domain term is active.
+        rgb_needed = any(k.startswith("rgb_") for k in self.loss_weights)
+        if rgb_needed:
+            # Clamp only for the gamma-bounded RGB path; raw_l1 keeps gradients on saturating pixels.
+            outputs_rgb = sensor.process2rgb(outputs.clamp(0, 1), in_type="rggb")
+            targets_rgb = sensor.process2rgb(targets, in_type="rggb")
 
-        rgb_loss = self.l1_loss(outputs_rgb, targets_rgb) + 0.5 * self.lpips_loss(outputs_rgb, targets_rgb)
-        raw_loss = self.l1_loss(outputs, targets)
-        loss = rgb_loss + raw_loss
-        return loss, {
-            "rgb_loss": rgb_loss.item(),
-            "raw_loss": raw_loss.item(),
-            "total_loss": loss.item(),
-        }
+        terms = {}
+        if "rgb_l1" in self.loss_weights:
+            terms["rgb_l1"] = self.loss_weights["rgb_l1"] * self.l1_loss(outputs_rgb, targets_rgb)
+        if "rgb_perceptual" in self.loss_weights:
+            terms["rgb_perceptual"] = self.loss_weights["rgb_perceptual"] * self.lpips_loss(outputs_rgb, targets_rgb)
+        if "raw_l1" in self.loss_weights:
+            terms["raw_l1"] = self.loss_weights["raw_l1"] * self.l1_loss(outputs, targets)
+
+        loss = sum(terms.values())
+        loss_dict = {k: v.item() for k, v in terms.items()}
+        loss_dict["total_loss"] = loss.item()
+        return loss, loss_dict
 
     def compute_metrics(self, outputs, targets):
         """Compute scalar PSNR / SSIM / LPIPS in sRGB space."""
@@ -156,7 +227,6 @@ class Trainer:
         sensor.reset_augmentation()
         outputs_rgb = sensor.process2rgb(outputs, in_type="rggb")
         targets_rgb = sensor.process2rgb(targets, in_type="rggb")
-        # batch_psnr returns shape [B]; lpips returns shape (B, 1, 1, 1); reduce both to scalars.
         return {
             "psnr": batch_psnr(outputs_rgb, targets_rgb).mean().item(),
             "ssim": batch_ssim(outputs_rgb, targets_rgb),
@@ -180,6 +250,7 @@ class Trainer:
         epochs = self.args["train"]["epochs"]
 
         for i, data_dict in enumerate(tqdm(self.train_loader)):
+            data_dict = self.add_depth(data_dict)
             inputs, targets = self.camera.render(
                 data_dict, render_mode=self.render_mode, output_type=self.output_type
             )
@@ -216,6 +287,7 @@ class Trainer:
         val_psnr, val_ssim, val_lpips, val_samples = 0.0, 0.0, 0.0, 0
 
         for i, data_dict in enumerate(tqdm(self.val_loader, desc="Validating")):
+            data_dict = self.add_depth(data_dict)
             inputs, targets = self.camera.render(
                 data_dict, render_mode=self.render_mode, output_type=self.output_type
             )
@@ -278,7 +350,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--config",
-        default="configs/7_comp_photography.yml",
+        default="configs/8_defocus_deblur.yml",
         help="Path to YAML config file.",
     )
     cli_args = parser.parse_args()

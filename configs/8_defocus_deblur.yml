@@ -1,0 +1,50 @@
+exp_name: "Defocus deblur"
+is_debug: True
+seed: 42
+
+camera:
+  lens_file: "./datasets/lenses/camera/rf50mm_f1.8.json"
+  sensor_file: "./datasets/sensors/canon_r6.json"
+  foc_dist: -10000   # mm, object-space; -10000 = focus at 10 m
+
+depth_estimator:
+  model_name: "depth-anything/Depth-Anything-V2-Small-hf"
+  depth_min_mm: 3000.0
+  depth_max_mm: 10000.0
+  infer_size: 518
+
+network:
+  name: NAFNet
+  in_chan: 6         # 4 RGGB + 1 ISO + 1 field (rggbif)
+  out_chan: 4
+  width: 32
+  middle_blk_num: 1
+  enc_blk_nums: [1, 1, 1, 18]
+  dec_blk_nums: [1, 1, 1, 1]
+  ckpt_path: null
+
+train:
+  epochs: 100
+  eval_every_n_epochs: 10
+  log_every_n_steps: 100
+  lr: 5e-4
+  render_mode: "psf_patch_depth_interp"
+  output_type: "rggbif"
+
+# Loss weights. Supported keys: rgb_l1, rgb_perceptual, raw_l1. Set to 0 to disable.
+loss:
+  rgb_l1: 1.0
+  rgb_perceptual: 0.5
+  raw_l1: 0.0
+
+train_set:
+  dataset: "./datasets/DIV2K_train_HR"
+  res: [512, 512]
+  batch_size: 4
+  num_workers: 3
+
+eval_set:
+  dataset: "./datasets/DIV2K_valid_HR"
+  res: [512, 512]
+  batch_size: 1
+  num_workers: 3
