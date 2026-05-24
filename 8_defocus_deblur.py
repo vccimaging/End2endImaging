@@ -10,7 +10,6 @@ Usage:
 
 Reference:
     [1] Xinge Yang, Chuong Nguyen, Wenbin Wang, Kaizhang Kang, Wolfgang Heidrich, Xiaoxing Li. "Efficient Depth- and Spatially-Varying Image Simulation for Defocus Deblur." ICCV Workshop 2025.
-    [2] Lihe Yang et al. "Depth Anything V2." NeurIPS 2024.
 """
 
 import argparse

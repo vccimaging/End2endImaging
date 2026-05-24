@@ -5,20 +5,17 @@ seed: 42
 camera:
   lens_file: "./datasets/lenses/camera/rf50mm_f1.8.json"
   sensor_file: "./datasets/sensors/canon_r6.json"
-  # Focus distance in mm (GeoLens.refocus uses negative-z object-space convention).
-  # -10000 = focus at 10 m (matches the depth_max_mm far plane below).
-  # Use a very large negative number (e.g. -1.0e6) for focus-at-infinity.
-  foc_dist: -10000
+  foc_dist: -10000   # mm, object-space; -10000 = focus at 10 m
 
 depth_estimator:
   model_name: "depth-anything/Depth-Anything-V2-Small-hf"
-  depth_min_mm: 3000.0   # 3 m near plane (smaller max defocus than 1 m)
-  depth_max_mm: 10000.0  # 10 m far plane
+  depth_min_mm: 3000.0
+  depth_max_mm: 10000.0
   infer_size: 518
 
 network:
   name: NAFNet
-  in_chan: 6         # 4 RGGB + 1 ISO + 1 field (rggbif). Depth drives simulation only — not a network input, since inference has no GT depth.
+  in_chan: 6         # 4 RGGB + 1 ISO + 1 field (rggbif)
   out_chan: 4
   width: 32
   middle_blk_num: 1
@@ -34,16 +31,7 @@ train:
   render_mode: "psf_patch_depth_interp"
   output_type: "rggbif"
 
-# Weights for each loss term. Set to 0 (or omit) to disable.
-# Supported keys: rgb_l1, rgb_perceptual, raw_l1.
-#
-# Perceptual + sRGB L1. raw_l1 is intentionally 0: NAFNet is identity-
-# initialized ([nafnet.py:102-106]) so L1 near identity has a weak high-
-# frequency gradient and the network stagnates close to the blurry input
-# (verified empirically: at 3 epochs the model was barely beating identity
-# on raw L1). VGG-feature loss provides the structural high-frequency signal
-# that pushes the network off identity. raw_l1 is redundant with rgb_l1
-# because ISP is a mostly-deterministic pixel-wise transform.
+# Loss weights. Supported keys: rgb_l1, rgb_perceptual, raw_l1. Set to 0 to disable.
 loss:
   rgb_l1: 1.0
   rgb_perceptual: 0.5
