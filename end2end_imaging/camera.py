@@ -248,7 +248,7 @@ class Camera(Renderer):
             img_lq_ls = []
             for b in range(img_linrgb.shape[0]):
                 img_b = img_linrgb[b, ...].unsqueeze(0)
-                patch_center = data_dict["field_center"][b, ...].unsqueeze(0)
+                patch_center = data_dict["field_center"][b, ...]  # shape (2,), as render_rgbd expects
                 depth = data_dict["depth"][b, ...].unsqueeze(0)
                 img_lq_b = self.lens.render_rgbd(
                     img_b, depth, method="psf_patch", patch_center=patch_center
