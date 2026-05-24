@@ -1,13 +1,18 @@
 import logging
 import os
 import random
+import shutil
+import string
+from datetime import datetime
 from glob import glob
+from pathlib import Path
 
 import cv2 as cv
 import lpips
 import numpy as np
 import torch
 import torch.nn.functional as F
+import yaml
 
 
 # ==================================
@@ -276,3 +281,62 @@ def set_logger(dir="./"):
     logger.addHandler(chlr)
     logger.addHandler(fhlr)
     # logger.addHandler(fhlr2)
+
+
+def generate_exp_name(tag):
+    """Generate a unique experiment name: ``{timestamp}-{tag}-{random}``.
+
+    Args:
+        tag: Short label describing the experiment (spaces become hyphens).
+
+    Returns:
+        Experiment name string, e.g. ``"0524-143000-MyTask-AbCd"``.
+    """
+    suffix = "".join(random.choice(string.ascii_letters + string.digits) for _ in range(4))
+    ts = datetime.now().strftime("%m%d-%H%M%S")
+    safe_tag = tag.replace(" ", "-")
+    return f"{ts}-{safe_tag}-{suffix}"
+
+
+def setup_experiment(args, script_path):
+    """Bootstrap a reproducible experiment directory.
+
+    Creates ``./results/{generate_exp_name(args["exp_name"])}/``, populates
+    ``args["result_dir"]`` and ``args["device"]``, seeds RNGs, configures the
+    file/stream logger, and snapshots both the config and the training script
+    into the result dir.
+
+    Args:
+        args: Mutable config dict. Reads ``exp_name`` (str) and ``seed`` (int
+            or None). Writes ``result_dir`` (str) and ``device`` (torch.device).
+        script_path: Path to the training script (typically ``__file__``).
+
+    Returns:
+        ``Path`` to the created result directory.
+    """
+    tag = args.get("exp_name", "experiment")
+    exp_name = generate_exp_name(tag)
+    result_dir = Path("./results") / exp_name
+    result_dir.mkdir(parents=True, exist_ok=True)
+    args["result_dir"] = str(result_dir)
+
+    if args.get("seed") is None:
+        args["seed"] = random.randint(0, 1000)
+
+    # Snapshot config + code before adding non-serializable runtime state (torch.device).
+    with open(result_dir / "config.yml", "w") as f:
+        yaml.dump(args, f)
+    shutil.copy(script_path, result_dir / Path(script_path).name)
+
+    set_seed(args["seed"])
+    set_logger(str(result_dir))
+    logging.info(f"Experiment: {exp_name}")
+
+    if torch.cuda.is_available():
+        args["device"] = torch.device("cuda")
+        logging.info(f"Using {torch.cuda.get_device_name(0)}")
+    else:
+        args["device"] = torch.device("cpu")
+        logging.info("Using CPU")
+
+    return result_dir

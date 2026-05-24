@@ -1,18 +1,15 @@
 """End-to-end computational photography: train an image restoration network with physically accurate image simulation.
 
 Usage:
-    python 7_comp_photography.py
+    python 7_comp_photography.py [--config configs/7_comp_photography.yml]
 
 Reference:
     [1] Xinge Yang, Chuong Nguyen, Wenbin Wang, Kaizhang Kang, Wolfgang Heidrich, Xiaoxing Li. "Efficient Depth- and Spatially-Varying Image Simulation for Defocus Deblur." ICCV Workshop 2025.
 """
 
+import argparse
 import logging
 import os
-import random
-import shutil
-import string
-from datetime import datetime
 
 import lpips
 import torch
@@ -25,46 +22,16 @@ from tqdm import tqdm
 
 from end2end_imaging import Camera
 from end2end_imaging.network import NAFNet, PerceptualLoss, PhotographicDataset
-from end2end_imaging.utils import batch_psnr, batch_ssim, set_logger, set_seed
+from end2end_imaging.utils import batch_psnr, batch_ssim, setup_experiment
+
+logger = logging.getLogger(__name__)
 
 
-def config():
-    """Load and prepare configuration."""
-    with open("configs/7_comp_photography.yml") as f:
+def config(config_path):
+    """Load YAML config and bootstrap the experiment directory."""
+    with open(config_path) as f:
         args = yaml.load(f, Loader=yaml.FullLoader)
-
-    # Set up result directory
-    characters = string.ascii_letters + string.digits
-    random_string = "".join(random.choice(characters) for _ in range(4))
-    current_time = datetime.now().strftime("%m%d-%H%M%S")
-    exp_name = f"{current_time}-Comp-Photography-{random_string}"
-
-    result_dir = f"./results/{exp_name}"
-    os.makedirs(result_dir, exist_ok=True)
-    args["result_dir"] = result_dir
-
-    # Set random seed
-    if args["seed"] is None:
-        args["seed"] = random.randint(0, 1000)
-    set_seed(args["seed"])
-
-    # Configure logging
-    set_logger(result_dir)
-    logging.info(f"Experiment: {args['exp_name']}")
-
-    # Configure device
-    if torch.cuda.is_available():
-        args["device"] = torch.device("cuda")
-        logging.info(f"Using {torch.cuda.get_device_name(0)}")
-    else:
-        args["device"] = torch.device("cpu")
-        logging.info("Using CPU")
-
-    # Save config and code
-    with open(f"{result_dir}/config.yml", "w") as f:
-        yaml.dump(args, f)
-    shutil.copy("7_comp_photography.py", f"{result_dir}/7_comp_photography.py")
-
+    setup_experiment(args, script_path=__file__)
     return args
 
 
@@ -75,7 +42,6 @@ class Trainer:
         self.args = args
         self.device = args["device"]
 
-        # Initialize camera, dataset, model
         self._init_camera(args["camera"])
         self._init_data(args["train_set"], args["eval_set"])
         self._init_model(args["network"], args["train"])
@@ -90,6 +56,15 @@ class Trainer:
 
     def _init_model(self, net_args, train_args):
         """Initialize the image restoration model and optimizer."""
+        # Validate channel counts before model construction so a config mismatch fails loudly.
+        expected_in, expected_out = Camera.output_channels(train_args["output_type"])
+        if net_args["in_chan"] != expected_in or net_args["out_chan"] != expected_out:
+            raise ValueError(
+                f"network channel mismatch for output_type='{train_args['output_type']}': "
+                f"expected in_chan={expected_in}, out_chan={expected_out}; "
+                f"got in_chan={net_args['in_chan']}, out_chan={net_args['out_chan']}"
+            )
+
         self.model = NAFNet(
             in_chan=net_args["in_chan"],
             out_chan=net_args["out_chan"],
@@ -99,7 +74,6 @@ class Trainer:
             dec_blk_nums=net_args["dec_blk_nums"],
         ).to(self.device)
 
-        # Load checkpoint if provided
         if net_args.get("ckpt_path"):
             state_dict = torch.load(net_args["ckpt_path"], map_location=self.device)
             self.model.load_state_dict(state_dict.get("model", state_dict))
@@ -113,26 +87,22 @@ class Trainer:
         self.render_mode = train_args["render_mode"]
         self.output_type = train_args["output_type"]
 
-        # Loss functions
         self.l1_loss = nn.L1Loss()
         self.lpips_loss = PerceptualLoss(device=self.device)
-
-        # Evaluation metric
         self.lpips_metric = lpips.LPIPS(net="alex").to(self.device)
 
     def _init_data(self, train_set_config, eval_set_config):
         """Initialize data loaders."""
-        # Download dataset if not exists
         if train_set_config["dataset"] == "./datasets/DIV2K_train_HR" and not os.path.exists(
             "./datasets/DIV2K_train_HR"
         ):
-            print("Downloading DIV2K dataset...")
+            logger.info("Downloading DIV2K dataset...")
             from end2end_imaging.network.dataset import download_div2k
             download_div2k("./datasets")
         elif train_set_config["dataset"] == "./datasets/BSDS300/images/train" and not os.path.exists(
             "./datasets/BSDS300/images/train"
         ):
-            print("Downloading BSDS300 dataset...")
+            logger.info("Downloading BSDS300 dataset...")
             from end2end_imaging.network.dataset import download_bsd300
             download_bsd300("./datasets")
 
@@ -158,60 +128,65 @@ class Trainer:
             pin_memory=True,
         )
 
-    def compute_loss(self, inputs, targets):
-        """Compute loss between model outputs and targets."""
-        outputs = self.model(inputs).clamp(0, 1)
+    def forward(self, inputs):
+        """Run the model forward pass. Outputs are unclamped to preserve gradients."""
+        return self.model(inputs)
 
-        # Convert to RGB (with random ISP augmentation) for loss computation
+    def compute_loss(self, outputs, targets):
+        """Compute loss between (unclamped) model outputs and RGGB targets."""
         sensor = self.camera.sensor
+        # Intentional ISP-domain augmentation: random gamma/CCM/AWB shared by outputs and targets per step.
         sensor.sample_augmentation()
-        outputs_rgb = sensor.process2rgb(outputs, in_type="rggb")
+        # Clamp only for the gamma-bounded RGB path; raw_loss keeps gradients on saturating pixels.
+        outputs_rgb = sensor.process2rgb(outputs.clamp(0, 1), in_type="rggb")
         targets_rgb = sensor.process2rgb(targets, in_type="rggb")
 
-        # Loss in RGB space (pixel + perceptual)
-        l1_loss = self.l1_loss(outputs_rgb, targets_rgb)
-        perceptual_loss = self.lpips_loss(outputs_rgb, targets_rgb)
-        rgb_loss = l1_loss + 0.5 * perceptual_loss
-
-        # Loss in RAW space
+        rgb_loss = self.l1_loss(outputs_rgb, targets_rgb) + 0.5 * self.lpips_loss(outputs_rgb, targets_rgb)
         raw_loss = self.l1_loss(outputs, targets)
-
         loss = rgb_loss + raw_loss
-        loss_dict = {
+        return loss, {
             "rgb_loss": rgb_loss.item(),
             "raw_loss": raw_loss.item(),
             "total_loss": loss.item(),
         }
-        return loss, loss_dict
 
     def compute_metrics(self, outputs, targets):
-        """Compute evaluation metrics (PSNR, SSIM, LPIPS)."""
+        """Compute scalar PSNR / SSIM / LPIPS in sRGB space."""
         sensor = self.camera.sensor
         sensor.reset_augmentation()
         outputs_rgb = sensor.process2rgb(outputs, in_type="rggb")
         targets_rgb = sensor.process2rgb(targets, in_type="rggb")
-
+        # batch_psnr returns shape [B]; lpips returns shape (B, 1, 1, 1); reduce both to scalars.
         return {
-            "psnr": batch_psnr(outputs_rgb, targets_rgb),
+            "psnr": batch_psnr(outputs_rgb, targets_rgb).mean().item(),
             "ssim": batch_ssim(outputs_rgb, targets_rgb),
-            "lpips": self.lpips_metric(outputs_rgb * 2 - 1, targets_rgb * 2 - 1),
+            "lpips": self.lpips_metric(outputs_rgb * 2 - 1, targets_rgb * 2 - 1).mean().item(),
         }
+
+    def _save_triplet(self, inputs, outputs, targets, path):
+        """Save vertically stacked [input | output | target] in sRGB for visual inspection."""
+        sensor = self.camera.sensor
+        sensor.reset_augmentation()
+        inputs_rgb = sensor.process2rgb(inputs[:, :4, :, :], in_type="rggb")
+        outputs_rgb = sensor.process2rgb(outputs[:, :4, :, :], in_type="rggb")
+        targets_rgb = sensor.process2rgb(targets[:, :4, :, :], in_type="rggb")
+        save_image(torch.cat([inputs_rgb, outputs_rgb, targets_rgb], dim=2), path)
 
     def train_epoch(self, epoch):
         """Train for one epoch."""
         self.model.train()
         total_loss = 0.0
+        log_every = self.args["train"]["log_every_n_steps"]
+        epochs = self.args["train"]["epochs"]
 
         for i, data_dict in enumerate(tqdm(self.train_loader)):
-            # Simulate camera capture (lens aberration + sensor noise)
             inputs, targets = self.camera.render(
                 data_dict, render_mode=self.render_mode, output_type=self.output_type
             )
 
-            # Forward pass and compute loss
-            loss, loss_dict = self.compute_loss(inputs, targets)
+            outputs = self.forward(inputs)
+            loss, loss_dict = self.compute_loss(outputs, targets)
 
-            # Backward and optimize
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
@@ -219,26 +194,18 @@ class Trainer:
 
             total_loss += loss_dict["total_loss"]
 
-            # Log progress
-            if (i + 1) % self.args["train"]["log_every_n_steps"] == 0:
-                print(
-                    f"Epoch: {epoch + 1}/{self.args['train']['epochs']}, "
+            if (i + 1) % log_every == 0:
+                logger.info(
+                    f"Epoch: {epoch + 1}/{epochs}, "
                     f"Batch: {i + 1}/{len(self.train_loader)}, "
                     f"Loss: {loss_dict['total_loss']:.4f}"
                 )
-
-                # Save sample images
-                with torch.no_grad():
-                    outputs = self.model(inputs)
-                    sensor = self.camera.sensor
-                    sensor.reset_augmentation()
-                    inputs_rgb = sensor.process2rgb(inputs[:, :4, :, :], in_type="rggb")
-                    outputs_rgb = sensor.process2rgb(outputs.detach()[:, :4, :, :], in_type="rggb")
-                    targets_rgb = sensor.process2rgb(targets[:, :4, :, :], in_type="rggb")
-                    save_image(
-                        torch.cat([inputs_rgb, outputs_rgb, targets_rgb], dim=2),
-                        f"{self.args['result_dir']}/train_epoch{epoch}_batch{i}.png",
-                    )
+                self._save_triplet(
+                    inputs,
+                    outputs.detach().clamp(0, 1),
+                    targets,
+                    f"{self.args['result_dir']}/train_epoch{epoch}_batch{i}.png",
+                )
 
         return total_loss / len(self.train_loader)
 
@@ -253,7 +220,7 @@ class Trainer:
                 data_dict, render_mode=self.render_mode, output_type=self.output_type
             )
 
-            outputs = self.model(inputs).clamp(0, 1)
+            outputs = self.forward(inputs).clamp(0, 1)
             metrics = self.compute_metrics(outputs, targets)
 
             bs = inputs.size(0)
@@ -262,15 +229,9 @@ class Trainer:
             val_lpips += metrics["lpips"] * bs
             val_samples += bs
 
-            # Save sample validation images
             if i == 0:
-                sensor = self.camera.sensor
-                sensor.reset_augmentation()
-                inputs_rgb = sensor.process2rgb(inputs[:, :4, :, :], in_type="rggb")
-                outputs_rgb = sensor.process2rgb(outputs[:, :4, :, :], in_type="rggb")
-                targets_rgb = sensor.process2rgb(targets[:, :4, :, :], in_type="rggb")
-                save_image(
-                    torch.cat([inputs_rgb, outputs_rgb, targets_rgb], dim=2),
+                self._save_triplet(
+                    inputs, outputs, targets,
                     f"{self.args['result_dir']}/val_epoch{epoch}.png",
                 )
 
@@ -281,31 +242,47 @@ class Trainer:
         }
 
     def save_checkpoint(self, epoch):
-        """Save model checkpoint."""
-        torch.save(self.model.state_dict(), f"{self.args['result_dir']}/network_epoch{epoch}.pth")
+        """Save full training state so a run can be resumed."""
+        torch.save(
+            {
+                "model": self.model.state_dict(),
+                "optimizer": self.optimizer.state_dict(),
+                "scheduler": self.scheduler.state_dict(),
+                "epoch": epoch,
+            },
+            f"{self.args['result_dir']}/network_epoch{epoch}.pth",
+        )
 
     def train(self):
         """Run the full training process."""
-        for epoch in range(self.args["train"]["epochs"]):
+        epochs = self.args["train"]["epochs"]
+        for epoch in range(epochs):
             train_loss = self.train_epoch(epoch)
-            print(f"Epoch {epoch + 1}/{self.args['train']['epochs']} — Loss: {train_loss:.4f}")
+            logger.info(f"Epoch {epoch + 1}/{epochs} - Loss: {train_loss:.4f}")
 
-            # Validate and save checkpoint
             if (epoch + 1) % self.args["train"]["eval_every_n_epochs"] == 0:
                 self.save_checkpoint(epoch + 1)
                 val_metrics = self.validate(epoch + 1)
-                print(
+                logger.info(
                     f"  Val PSNR: {val_metrics['val_psnr']:.2f} dB, "
                     f"SSIM: {val_metrics['val_ssim']:.4f}, "
                     f"LPIPS: {val_metrics['val_lpips']:.4f}"
                 )
-                print("-" * 50)
+                logger.info("-" * 50)
 
-        self.save_checkpoint(self.args["train"]["epochs"])
-        print("Training completed!")
+        self.save_checkpoint(epochs)
+        logger.info("Training completed!")
 
 
 if __name__ == "__main__":
-    args = config()
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--config",
+        default="configs/7_comp_photography.yml",
+        help="Path to YAML config file.",
+    )
+    cli_args = parser.parse_args()
+
+    args = config(cli_args.config)
     trainer = Trainer(args)
     trainer.train()
