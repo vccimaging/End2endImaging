@@ -35,8 +35,9 @@ from end2end_imaging.network import (
 )
 from end2end_imaging.utils import batch_psnr, batch_ssim, setup_experiment
 
-# Defaults preserve the historical behavior if a config omits the `loss:` block.
-DEFAULT_LOSS_WEIGHTS = {"rgb_l1": 1.0, "rgb_perceptual": 0.5, "raw_l1": 1.0}
+# L1-only by default: easier to optimize early. Enable perceptual via the config
+# once pixel loss has converged enough to provide useful gradients through VGG.
+DEFAULT_LOSS_WEIGHTS = {"rgb_l1": 1.0, "rgb_perceptual": 0.0, "raw_l1": 1.0}
 
 logger = logging.getLogger(__name__)
 
@@ -63,12 +64,21 @@ class Trainer:
         self._init_loss(args.get("loss", DEFAULT_LOSS_WEIGHTS))
 
     def _init_camera(self, camera_args):
-        """Initialize the camera (lens + sensor)."""
+        """Initialize the camera (lens + sensor), refocused per config.
+
+        ``foc_dist`` is in mm, in GeoLens's negative-z object-space convention
+        (``calc_sensor_plane`` ray-traces from a point source at ``depth``).
+        Defaults to -10000 mm = 10 m, which matches the depth far plane; use a
+        very large negative magnitude (e.g. -1.0e6) for focus-at-infinity.
+        """
         self.camera = Camera(
             lens_file=camera_args["lens_file"],
             sensor_file=camera_args["sensor_file"],
             device=self.device,
         )
+        foc_dist = float(camera_args.get("foc_dist", -10000.0))
+        self.camera.lens.refocus(foc_dist=foc_dist)
+        logger.info(f"Lens refocused to foc_dist={foc_dist:.1f} mm")
 
     def _init_depth_estimator(self, depth_args):
         """Initialize the off-the-shelf depth estimator (frozen)."""
