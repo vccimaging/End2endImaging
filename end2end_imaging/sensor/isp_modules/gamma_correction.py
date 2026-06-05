@@ -30,8 +30,13 @@ class GammaCorrection(nn.Module):
         )
 
     def reset_augmentation(self):
-        """Reset augmentation for evaluation."""
-        self.gamma_param = self.gamma_param_org
+        """Reset augmentation for evaluation.
+
+        No-op if no augmentation has been sampled yet, in which case
+        ``gamma_param`` already holds the original value.
+        """
+        if hasattr(self, "gamma_param_org"):
+            self.gamma_param = self.gamma_param_org
 
     def forward(self, img, quantize=False):
         """Gamma Correction (differentiable).
