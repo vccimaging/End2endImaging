@@ -20,7 +20,7 @@ class RGBSensor(Sensor):
     3. **Noise** – shot noise (signal-dependent Gaussian) + read noise
        (ISO-independent Gaussian) added to the n-bit raw data.
     4. **ISP** (forward) – via an
-       :class:`~end2end_imaging.sensor.isp_modules.isp.InvertibleISP`:
+       [`InvertibleISP`][end2end_imaging.sensor.isp_modules.isp.InvertibleISP]:
        black-level correction → white balance → colour matrix →
        demosaicing → gamma correction.
 
@@ -33,7 +33,10 @@ class RGBSensor(Sensor):
         black_level (int): Black level pedestal [DN].
         bayer_pattern (str): Bayer pattern (e.g. ``"rggb"``).
         iso_base (int): Base ISO (noise-free reference).
-        isp (InvertibleISP): Embedded ISP pipeline.
+        readnoise_std (float): Read-noise standard deviation [DN].
+        shotnoise_std_alpha (float): Shot-noise scale coefficient.
+        shotnoise_std_beta (float): Shot-noise offset coefficient.
+        isp (InvertibleISP): Embedded invertible ISP pipeline.
     """
 
     def __init__(
@@ -55,7 +58,8 @@ class RGBSensor(Sensor):
         green_response=None,
         blue_response=None,
     ):
-        """
+        """Initialize an RGB sensor with a physics-based noise model and invertible ISP.
+
         Args:
             size (tuple): Sensor physical size in mm (W, H). Default (36.0, 24.0).
             res (tuple): Sensor resolution in pixels (W, H). Default (5472, 3648).
@@ -138,6 +142,14 @@ class RGBSensor(Sensor):
         )
 
     def to(self, device):
+        """Move the sensor, ISP pipeline, and spectral-response tensors to a device.
+
+        Args:
+            device: Target device (e.g. ``torch.device("cuda")``).
+
+        Returns:
+            RGBSensor: This sensor instance, for call chaining.
+        """
         super().to(device)
         if self.wavelengths is not None:
             self.red_response = self.red_response.to(device)

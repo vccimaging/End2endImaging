@@ -16,14 +16,42 @@ from einops import rearrange
 
 
 def to_3d(x):
+    """Flatten a 4D image tensor to a 3D token sequence.
+
+    Args:
+        x: Input tensor of shape ``(B, C, H, W)``.
+
+    Returns:
+        Tensor of shape ``(B, H*W, C)``.
+    """
     return rearrange(x, "b c h w -> b (h w) c")
 
 
 def to_4d(x, h, w):
+    """Reshape a 3D token sequence back to a 4D image tensor.
+
+    Args:
+        x: Input tensor of shape ``(B, H*W, C)``.
+        h: Spatial height ``H``.
+        w: Spatial width ``W``.
+
+    Returns:
+        Tensor of shape ``(B, C, H, W)``.
+    """
     return rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
 
 
 class BiasFree_LayerNorm(nn.Module):
+    """Layer normalization without mean subtraction or bias.
+
+    Normalizes the last dimension using only the variance (no centering),
+    then applies a learnable per-channel scale.
+
+    Args:
+        normalized_shape: Number of features in the last dimension. An integer
+            is converted to a single-element shape.
+    """
+
     def __init__(self, normalized_shape):
         super(BiasFree_LayerNorm, self).__init__()
         if isinstance(normalized_shape, numbers.Integral):
@@ -36,11 +64,29 @@ class BiasFree_LayerNorm(nn.Module):
         self.normalized_shape = normalized_shape
 
     def forward(self, x):
+        """Apply bias-free layer normalization over the last dimension.
+
+        Args:
+            x: Input tensor whose last dimension matches ``normalized_shape``.
+
+        Returns:
+            Normalized and scaled tensor with the same shape as ``x``.
+        """
         sigma = x.var(-1, keepdim=True, unbiased=False)
         return x / torch.sqrt(sigma + 1e-5) * self.weight
 
 
 class WithBias_LayerNorm(nn.Module):
+    """Layer normalization with mean subtraction and learnable bias.
+
+    Normalizes the last dimension using its mean and variance, then applies a
+    learnable per-channel scale and bias.
+
+    Args:
+        normalized_shape: Number of features in the last dimension. An integer
+            is converted to a single-element shape.
+    """
+
     def __init__(self, normalized_shape):
         super(WithBias_LayerNorm, self).__init__()
         if isinstance(normalized_shape, numbers.Integral):
@@ -54,12 +100,31 @@ class WithBias_LayerNorm(nn.Module):
         self.normalized_shape = normalized_shape
 
     def forward(self, x):
+        """Apply layer normalization with bias over the last dimension.
+
+        Args:
+            x: Input tensor whose last dimension matches ``normalized_shape``.
+
+        Returns:
+            Normalized, scaled, and shifted tensor with the same shape as ``x``.
+        """
         mu = x.mean(-1, keepdim=True)
         sigma = x.var(-1, keepdim=True, unbiased=False)
         return (x - mu) / torch.sqrt(sigma + 1e-5) * self.weight + self.bias
 
 
 class LayerNorm(nn.Module):
+    """Channel-wise layer normalization for 4D image tensors.
+
+    Flattens spatial dimensions to tokens, normalizes over the channel
+    dimension using the selected variant, then restores the image layout.
+
+    Args:
+        dim: Number of channels to normalize.
+        LayerNorm_type: ``"BiasFree"`` selects [`BiasFree_LayerNorm`][end2end_imaging.network.reconstruction.restormer.BiasFree_LayerNorm];
+            any other value selects [`WithBias_LayerNorm`][end2end_imaging.network.reconstruction.restormer.WithBias_LayerNorm].
+    """
+
     def __init__(self, dim, LayerNorm_type):
         super(LayerNorm, self).__init__()
         if LayerNorm_type == "BiasFree":
@@ -68,6 +133,14 @@ class LayerNorm(nn.Module):
             self.body = WithBias_LayerNorm(dim)
 
     def forward(self, x):
+        """Normalize a 4D image tensor over its channel dimension.
+
+        Args:
+            x: Input tensor of shape ``(B, C, H, W)``.
+
+        Returns:
+            Normalized tensor of shape ``(B, C, H, W)``.
+        """
         h, w = x.shape[-2:]
         return to_4d(self.body(to_3d(x)), h, w)
 
@@ -75,6 +148,18 @@ class LayerNorm(nn.Module):
 ##########################################################################
 ## Gated-Dconv Feed-Forward Network (GDFN)
 class FeedForward(nn.Module):
+    """Gated-Dconv Feed-Forward Network (GDFN).
+
+    Expands the channel dimension, applies a depth-wise 3x3 convolution, and
+    uses a GELU gating mechanism between two halves before projecting back to
+    the input dimension.
+
+    Args:
+        dim: Number of input and output channels.
+        ffn_expansion_factor: Multiplier for the hidden channel dimension.
+        bias: Whether to use bias in the convolutions.
+    """
+
     def __init__(self, dim, ffn_expansion_factor, bias):
         super(FeedForward, self).__init__()
 
@@ -95,6 +180,14 @@ class FeedForward(nn.Module):
         self.project_out = nn.Conv2d(hidden_features, dim, kernel_size=1, bias=bias)
 
     def forward(self, x):
+        """Apply the gated depth-wise feed-forward transform.
+
+        Args:
+            x: Input tensor of shape ``(B, dim, H, W)``.
+
+        Returns:
+            Output tensor of shape ``(B, dim, H, W)``.
+        """
         x = self.project_in(x)
         x1, x2 = self.dwconv(x).chunk(2, dim=1)
         x = F.gelu(x1) * x2
@@ -105,6 +198,18 @@ class FeedForward(nn.Module):
 ##########################################################################
 ## Multi-DConv Head Transposed Self-Attention (MDTA)
 class Attention(nn.Module):
+    """Multi-DConv Head Transposed Self-Attention (MDTA).
+
+    Computes self-attention across the channel dimension instead of the spatial
+    dimension, using depth-wise convolutions on the query/key/value projections
+    and a learnable per-head temperature.
+
+    Args:
+        dim: Number of input and output channels.
+        num_heads: Number of attention heads.
+        bias: Whether to use bias in the convolutions.
+    """
+
     def __init__(self, dim, num_heads, bias):
         super(Attention, self).__init__()
         self.num_heads = num_heads
@@ -123,6 +228,14 @@ class Attention(nn.Module):
         self.project_out = nn.Conv2d(dim, dim, kernel_size=1, bias=bias)
 
     def forward(self, x):
+        """Apply channel-wise (transposed) multi-head self-attention.
+
+        Args:
+            x: Input tensor of shape ``(B, dim, H, W)``.
+
+        Returns:
+            Output tensor of shape ``(B, dim, H, W)``.
+        """
         b, c, h, w = x.shape
 
         qkv = self.qkv_dwconv(self.qkv(x))
@@ -150,6 +263,20 @@ class Attention(nn.Module):
 
 ##########################################################################
 class TransformerBlock(nn.Module):
+    """Restormer transformer block combining MDTA attention and a GDFN.
+
+    Applies layer-normalized [`Attention`][end2end_imaging.network.reconstruction.restormer.Attention]
+    and [`FeedForward`][end2end_imaging.network.reconstruction.restormer.FeedForward]
+    sub-layers, each with a residual connection.
+
+    Args:
+        dim: Number of input and output channels.
+        num_heads: Number of attention heads.
+        ffn_expansion_factor: Hidden dimension multiplier in the GDFN.
+        bias: Whether to use bias in the convolutions.
+        LayerNorm_type: ``"WithBias"`` or ``"BiasFree"`` normalization variant.
+    """
+
     def __init__(self, dim, num_heads, ffn_expansion_factor, bias, LayerNorm_type):
         super(TransformerBlock, self).__init__()
 
@@ -159,6 +286,14 @@ class TransformerBlock(nn.Module):
         self.ffn = FeedForward(dim, ffn_expansion_factor, bias)
 
     def forward(self, x):
+        """Apply attention and feed-forward sub-layers with residuals.
+
+        Args:
+            x: Input tensor of shape ``(B, dim, H, W)``.
+
+        Returns:
+            Output tensor of shape ``(B, dim, H, W)``.
+        """
         x = x + self.attn(self.norm1(x))
         x = x + self.ffn(self.norm2(x))
 
@@ -168,6 +303,17 @@ class TransformerBlock(nn.Module):
 ##########################################################################
 ## Overlapped image patch embedding with 3x3 Conv
 class OverlapPatchEmbed(nn.Module):
+    """Overlapped image patch embedding using a 3x3 convolution.
+
+    Projects the input image into the embedding space while preserving spatial
+    resolution (stride 1, padding 1).
+
+    Args:
+        in_c: Number of input channels. Defaults to 3.
+        embed_dim: Output embedding dimension. Defaults to 48.
+        bias: Whether to use bias in the convolution. Defaults to False.
+    """
+
     def __init__(self, in_c=3, embed_dim=48, bias=False):
         super(OverlapPatchEmbed, self).__init__()
 
@@ -176,6 +322,14 @@ class OverlapPatchEmbed(nn.Module):
         )
 
     def forward(self, x):
+        """Embed an input image into the feature space.
+
+        Args:
+            x: Input tensor of shape ``(B, in_c, H, W)``.
+
+        Returns:
+            Embedded tensor of shape ``(B, embed_dim, H, W)``.
+        """
         x = self.proj(x)
 
         return x
@@ -184,6 +338,16 @@ class OverlapPatchEmbed(nn.Module):
 ##########################################################################
 ## Resizing modules
 class Downsample(nn.Module):
+    """Halve the spatial resolution and double the channel count.
+
+    Reduces channels with a 3x3 convolution, then applies a pixel-unshuffle by
+    a factor of 2, yielding output with ``2 * n_feat`` channels at half height
+    and half width.
+
+    Args:
+        n_feat: Number of input feature channels.
+    """
+
     def __init__(self, n_feat):
         super(Downsample, self).__init__()
 
@@ -195,10 +359,28 @@ class Downsample(nn.Module):
         )
 
     def forward(self, x):
+        """Downsample the input feature map.
+
+        Args:
+            x: Input tensor of shape ``(B, n_feat, H, W)``.
+
+        Returns:
+            Tensor of shape ``(B, 2*n_feat, H/2, W/2)``.
+        """
         return self.body(x)
 
 
 class Upsample(nn.Module):
+    """Double the spatial resolution and halve the channel count.
+
+    Expands channels with a 3x3 convolution, then applies a pixel-shuffle by a
+    factor of 2, yielding output with ``n_feat // 2`` channels at twice the
+    height and width.
+
+    Args:
+        n_feat: Number of input feature channels.
+    """
+
     def __init__(self, n_feat):
         super(Upsample, self).__init__()
 
@@ -210,6 +392,14 @@ class Upsample(nn.Module):
         )
 
     def forward(self, x):
+        """Upsample the input feature map.
+
+        Args:
+            x: Input tensor of shape ``(B, n_feat, H, W)``.
+
+        Returns:
+            Tensor of shape ``(B, n_feat//2, 2*H, 2*W)``.
+        """
         return self.body(x)
 
 

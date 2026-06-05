@@ -61,11 +61,12 @@ class PhotographicDataset(Dataset):
         """Initialize the Photographic Dataset.
 
         Args:
-            img_dir: Directory containing the images
-            img_res: Image resolution. If int, creates square image of [img_res, img_res]
-            iso_range: ISO range. Defaults to (100, 400).
-            iso_scale: ISO scale. Defaults to 1000.
-            is_train: Whether this is for training (with augmentation) or testing
+            img_dir: Directory containing the images.
+            img_res: Image resolution. If int, creates a square image of
+                [img_res, img_res]. Defaults to (512, 512).
+            iso_range: ISO sampling range (low, high). Defaults to (100, 400).
+            is_train: Whether this is for training (with augmentation) or
+                testing. Defaults to True.
         """
         super(PhotographicDataset, self).__init__()
         self.img_paths = glob.glob(f"{img_dir}/**.png") + glob.glob(f"{img_dir}/**.jpg")
@@ -105,12 +106,20 @@ class PhotographicDataset(Dataset):
         return len(self.img_paths)
 
     def sample_iso(self):
-        """Sample ISO value from the ISO range."""
+        """Sample an ISO value uniformly from the ISO range.
+
+        Returns:
+            A scalar float tensor with the sampled ISO value.
+        """
         iso_low, iso_high = self.iso_range
         return torch.randint(iso_low, iso_high, (1,))[0].float()
 
     def sample_field(self):
-        """Sample field value from the field range [-1, 1] on x and y axis."""
+        """Sample a field center from the range [-1, 1] on the x and y axes.
+
+        Returns:
+            A tensor of shape (2,) with the sampled (x, y) field center.
+        """
         return torch.rand(2) * 2 - 1
 
     def __getitem__(self, idx):
@@ -142,6 +151,13 @@ class PhotographicDataset(Dataset):
 def download_bsd300(destination_folder="./datasets"):
     """Download the BSDS300 dataset (300 images, 22MB).
 
+    Args:
+        destination_folder: Directory to download and extract the dataset
+            into. Defaults to "./datasets".
+
+    Returns:
+        Path to the extracted image directory.
+
     Reference:
         [1] https://github.com/pytorch/examples/blob/main/super_resolution/data.py#L10
     """
@@ -172,7 +188,11 @@ def download_bsd300(destination_folder="./datasets"):
     return output_image_dir
 
 def download_div2k(destination_folder):
-    """Download the DIV2K dataset (800 images, 3.98GB)."""
+    """Download the DIV2K dataset (800 images, 3.98GB).
+
+    Args:
+        destination_folder: Directory to download and extract the dataset into.
+    """
     urls = {
         "DIV2K_train_HR.zip": "http://data.vision.ee.ethz.ch/cvl/DIV2K/DIV2K_train_HR.zip",
         "DIV2K_valid_HR.zip": "http://data.vision.ee.ethz.ch/cvl/DIV2K/DIV2K_valid_HR.zip",
@@ -206,8 +226,13 @@ def download_div2k(destination_folder):
 
 def download_flick2k(destination_folder="./datasets"):
     """Download the FLICK2K dataset (2650 images, 11.6GB).
-    
-    You can directly download the zip file from the following URL:
+
+    Args:
+        destination_folder: Directory to extract the dataset into. Defaults
+            to "./datasets".
+
+    Note:
+        You can directly download the zip file from the following URL:
         https://huggingface.co/datasets/yangtao9009/Flickr2K/blob/main/Flickr2K.zip
     """
     # Download
@@ -228,8 +253,13 @@ def download_flick2k(destination_folder="./datasets"):
 
 def download_div8k(destination_folder="./datasets"):
     """Download the DIV8K dataset (1504 images, 46.3GB).
-    
-    You can directly download the zip file from the following URL:
+
+    Args:
+        destination_folder: Directory to extract the dataset into. Defaults
+            to "./datasets".
+
+    Note:
+        You can directly download the zip file from the following URL:
         https://huggingface.co/datasets/Iceclear/DIV8K_TrainingSet/blob/main/DIV8K.zip
     """
     # Download
@@ -250,8 +280,13 @@ def download_div8k(destination_folder="./datasets"):
 
 def download_mit5k(destination_folder="./datasets"):
     """Download the MIT5K dataset (5000 images, ~50GB).
-    
-    You can directly download the zip file from the following URL:
-        https://data.csail.mit.edu/graphics/fivek/fivek_dataset.tar
+
+    Args:
+        destination_folder: Directory to extract the dataset into. Defaults
+            to "./datasets".
+
+    Note:
+        Not yet implemented. You can directly download the tar file from the
+        following URL: https://data.csail.mit.edu/graphics/fivek/fivek_dataset.tar
     """
     pass

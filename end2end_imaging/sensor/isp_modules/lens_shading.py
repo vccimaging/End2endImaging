@@ -51,12 +51,16 @@ class LensShadingCorrection(nn.Module):
         """Compute radial gain map based on distance from center.
 
         Args:
-            H, W: Height and width of the image.
-            device: Target device.
-            dtype: Target dtype.
+            H: Height of the image.
+            W: Width of the image.
+            device: Target device for the computed gain map.
+            dtype: Target dtype for the computed gain map.
 
         Returns:
             gain_map: Gain map of shape [1, 1, H, W].
+
+        Raises:
+            ValueError: If ``self.falloff_model`` is not "radial" or "polynomial".
         """
         # Create coordinate grid normalized to [-1, 1]
         y = torch.linspace(-1, 1, H, device=device, dtype=dtype)

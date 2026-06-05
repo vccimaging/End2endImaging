@@ -14,11 +14,17 @@ class ColorCorrectionMatrix(nn.Module):
         """Initialize color correction matrix.
 
         Args:
-            ccm_matrix: Color correction matrix of shape [4, 3]. Example:
+            ccm_matrix: Color correction matrix as a list of shape [4, 3] or
+                [3, 3] (a [3, 3] matrix is padded with a zero bias row to
+                [4, 3]). If None (default), an identity matrix with zero bias
+                is used. Example:
                 [[1.8506, -0.7920, -0.0605],
                  [-0.1562,  1.6455, -0.4912],
                  [ 0.0176, -0.5439,  1.5254],
                  [ 0.0,     0.0,     0.0   ]]
+
+        Raises:
+            ValueError: If ccm_matrix is neither None nor a list.
 
         Reference:
             [1] https://github.com/QiuJueqin/fast-openISP/blob/master/configs/nikon_d3200.yaml#L57
@@ -79,7 +85,10 @@ class ColorCorrectionMatrix(nn.Module):
         """Inverse color correction matrix. Convert sensor color space to RGB image.
 
         Args:
-            rgb_image: Input tensor of shape [B, 3, H, W] in sensor color space.
+            img: Input tensor of shape [B, 3, H, W] in sensor color space.
+
+        Returns:
+            img_original: RGB image of shape [B, 3, H, W], clamped to [0, 1].
         """
         ccm_matrix = self.ccm_matrix
 

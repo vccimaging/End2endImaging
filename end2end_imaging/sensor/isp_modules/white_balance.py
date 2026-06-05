@@ -21,11 +21,17 @@ class AutoWhiteBalance(nn.Module):
         self.register_buffer('white_balance', torch.tensor(white_balance))
 
     def sample_augmentation(self):
+        """Sample augmentation for synthetic data generation.
+
+        Perturbs the white balance gains with Gaussian noise, caching the
+        original gains on first call so they can be restored later.
+        """
         if not hasattr(self, "white_balance_org"):
             self.white_balance_org = self.white_balance
         self.white_balance = self.white_balance_org + torch.randn_like(self.white_balance_org) * 0.1
 
     def reset_augmentation(self):
+        """Reset augmentation for evaluation by restoring the original gains."""
         self.white_balance = self.white_balance_org
 
     def apply_awb_bayer(self, bayer):
@@ -36,6 +42,9 @@ class AutoWhiteBalance(nn.Module):
 
         Returns:
             bayer_wb: Output tensor with same shape as input.
+
+        Raises:
+            ValueError: If awb_method is not "gray_world" or "manual".
         """
         B, _, H, W = bayer.shape
 
@@ -94,6 +103,9 @@ class AutoWhiteBalance(nn.Module):
 
         Returns:
             rgb_wb: Output tensor with same shape as input.
+
+        Raises:
+            ValueError: If awb_method is not "gray_world" or "manual".
         """
         if self.awb_method == "gray_world":
             # Calculate average for each channel
@@ -152,9 +164,23 @@ class AutoWhiteBalance(nn.Module):
         return rgb_unbalanced
 
     def safe_reverse_awb(self, img):
-        """Inverse auto white balance.
+        """Inverse auto white balance with highlight-safe gains.
 
-        Ref: https://github.com/google-research/google-research/blob/master/unprocessing/unprocess.py#L92C1-L102C28
+        Applies inverse white balance gains while attenuating the correction in
+        bright (near-saturated) regions to avoid pushing highlights out of range.
+
+        Args:
+            img: Input tensor of shape [3, H, W] or [B, 3, H, W].
+
+        Returns:
+            rgb_unbalanced: Output tensor with inverse white balance applied,
+                same shape as input.
+
+        Raises:
+            ValueError: If img is not 3- or 4-dimensional.
+
+        Reference:
+            https://github.com/google-research/google-research/blob/master/unprocessing/unprocess.py#L92C1-L102C28
         """
         r_gain = self.white_balance[0]
         g_gain = self.white_balance[1]

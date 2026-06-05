@@ -296,10 +296,14 @@ class Demosaic(nn.Module):
         """Demosaic a Bayer pattern image to RGB.
 
         Args:
-            bayer: Input tensor of shape [B, 1, H, W].
+            bayer: Input tensor of shape [1, H, W] or [B, 1, H, W].
 
         Returns:
-            rgb: Output tensor of shape [B, 3, H, W].
+            raw_rgb: Output tensor of shape [3, H, W] or [B, 3, H, W],
+                matching the dimensionality of the input.
+
+        Raises:
+            ValueError: If ``self.method`` is not "bilinear" or "malvar".
         """
         if bayer.dim() == 3:
             bayer = bayer.unsqueeze(0)
@@ -327,6 +331,10 @@ class Demosaic(nn.Module):
 
         Returns:
             torch.Tensor: Bayer image, shape [1, H, W] or [B, 1, H, W], data range [0, 1].
+
+        Raises:
+            ValueError: If the input does not have 3 or 4 dimensions, or if the
+                channel dimension is not 3.
         """
         if img.ndim == 3:
             # Input shape: [3, H, W]
