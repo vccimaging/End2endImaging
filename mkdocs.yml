@@ -70,9 +70,7 @@ nav:
   - Examples:
       - Overview: examples/index.md
       - End-to-End Lens Design: examples/end2end_lens_design.md
-      - Automated Lens Design: examples/autolens.md
       - PSF Surrogate Network: examples/psf_net.md
       - Task-Driven Lens Design: examples/task_driven.md
-      - Hybrid Lens Design: examples/hybrid_lens.md
       - Computational Photography: examples/comp_photography.md
   - Contributing: contributing.md
