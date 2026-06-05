@@ -173,6 +173,8 @@ class OpenISP(nn.Module):
             black_level (float): Black level value to subtract. Default 64.
             bayer_pattern (str): Bayer pattern of the input. Default "rggb".
         """
+        super().__init__()
+
         self.bit = bit
         self.black_level = black_level
         self.bayer_pattern = bayer_pattern
@@ -194,14 +196,12 @@ class OpenISP(nn.Module):
         # CCM
         # Reference data from https://github.com/QiuJueqin/fast-openISP/blob/master/configs/nikon_d3200.yaml#L57
         # Alternative data from https://github.com/timothybrooks/hdr-plus/blob/master/src/finish.cpp#L626
-        self.ccm_matrix = torch.tensor(
-            [
-                [1.8506, -0.7920, -0.0605],
-                [-0.1562, 1.6455, -0.4912],
-                [0.0176, -0.5439, 1.5254],
-                [0.0, 0.0, 0.0],
-            ]
-        )
+        self.ccm_matrix = [
+            [1.8506, -0.7920, -0.0605],
+            [-0.1562, 1.6455, -0.4912],
+            [0.0176, -0.5439, 1.5254],
+            [0.0, 0.0, 0.0],
+        ]
 
         # GC
         self.gamma_param = 2.2

@@ -20,7 +20,7 @@ class UNet(nn.Module):
 
     def __init__(self, in_channels=3, out_channels=3):
         super().__init__()
-        self.pre = self.pre = nn.Sequential(
+        self.pre = nn.Sequential(
             nn.Conv2d(in_channels, 16, kernel_size=3, stride=1, padding=1), nn.PReLU(16)
         )
         self.conv00 = BasicBlock(16, 32)
