@@ -9,7 +9,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from deeplens import init_device
+from end2end_imaging.deeplens import init_device
 from .config import (
     DEFAULT_WAVE,
     DEPTH,
