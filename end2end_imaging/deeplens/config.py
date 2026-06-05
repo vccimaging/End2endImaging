@@ -30,7 +30,7 @@ DEFAULT_WAVE = 0.587  # [µm] default design wavelength (green, Fraunhofer d)
 # material dispersion, Zemax export, and gradient numerics.
 # ===========================================
 
-# Tolerance deltas for finite-difference / paraxial approximations
+# Deltas for finite-difference / paraxial approximations
 DELTA = 1e-6
 DELTA_PARAXIAL = 0.01
 EPSILON = 1e-12  # numerical zero guard (replaces 0 in divisions / sqrts)

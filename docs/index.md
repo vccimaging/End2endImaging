@@ -10,7 +10,7 @@ Scene → [ DeepLens ] → [ Sensor ] → [ Network ] → Output Image
            GeoLens       RGBSensor       UNet
          HybridLens      MonoSensor     Restormer
         DiffractiveLens                 NAFNet
-         ParaxialLens
+          DefocusLens
          PSFNetLens
 ```
 
@@ -141,7 +141,7 @@ See `7_comp_photography.py` for a full training example.
 | `HybridLens` | Refractive lens + diffractive optical element | Hybrid optics co-design |
 | `DiffractiveLens` | Pure wave-optics diffractive surfaces | Flat optics, DOE design |
 | `PSFNetLens` | Neural network PSF surrogate | Fast PSF approximation |
-| `ParaxialLens` | Thin-lens / circle-of-confusion model | Simple bokeh simulation |
+| `DefocusLens` | Circle-of-confusion model | Simple bokeh simulation |
 
 ### Code Structure
 
@@ -154,7 +154,7 @@ end2end_imaging/
 │   ├── geolens.py               #   GeoLens — refractive ray tracing
 │   ├── hybridlens.py            #   HybridLens — refractive + DOE
 │   ├── diffraclens.py           #   DiffractiveLens — wave optics
-│   ├── paraxiallens.py          #   ParaxialLens — thin lens model
+│   ├── defocuslens.py           #   DefocusLens — defocus model
 │   ├── psfnetlens.py            #   PSFNetLens — neural PSF surrogate
 │   ├── geolens_pkg/             #   GeoLens evaluation, optimization, I/O, visualization
 │   ├── geometric_surface/       #   Refractive surfaces (spheric, aspheric, ...)

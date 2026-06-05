@@ -27,11 +27,11 @@ The core of End2endImaging is the `Camera` class, which composes a lens model an
 
 The [`deeplens/`](end2end_imaging/deeplens/) module provides differentiable lens models for optical simulation and design:
 
-- **GeoLens** — Multi-element refractive lens via differentiable ray tracing. Supports Zemax/Code V/JSON I/O, automated lens design, Seidel aberration analysis, and tolerancing.
+- **GeoLens** — Multi-element refractive lens via differentiable ray tracing. Supports Zemax/Code V/JSON I/O, automated lens design, and Seidel aberration analysis.
 - **HybridLens** — Refractive lens + diffractive optical element (DOE). Coherent ray tracing + Angular Spectrum Method propagation.
 - **DiffractiveLens** — Pure wave-optics lens using diffractive surfaces and scalar diffraction.
 - **PSFNetLens** — Neural surrogate wrapping a GeoLens with an MLP for fast PSF prediction.
-- **ParaxialLens** — Thin-lens model for depth-of-field and bokeh simulation.
+- **DefocusLens** — Circle-of-confusion model for depth-of-field and bokeh simulation.
 
 #### Sensor & ISP Simulation
 Physically accurate sensor simulation with Bayer CFA, read/shot noise model, and a composable ISP pipeline (black level, white balance, demosaicing, color correction, gamma, tone mapping). Each stage is a differentiable `torch.nn.Module`.
