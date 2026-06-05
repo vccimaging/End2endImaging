@@ -94,9 +94,6 @@ class Surface(DeepObj):
         self.newton_convergence = 50.0 * 1e-6  # [mm], Newton method convergence threshold
         self.newton_step_bound = 5.0  # [mm], maximum step size in each iteration
 
-        self.tolerancing = False
-        self._R_tilt = None
-        self._R_tilt_inv = None
         self.device = device if device is not None else torch.device("cpu")
         self.to(self.device)
 
@@ -157,8 +154,6 @@ class Surface(DeepObj):
         ray = self.intersect(ray, n1)
 
         if refraction:
-            if self.tolerancing:
-                n2 = n2 + self.mat2_n_error
             old_d = ray.d.clone()
             ray = self.refract(ray, n1 / n2)
             ray = self.bend_penalty(ray, old_d)
@@ -371,22 +366,8 @@ class Surface(DeepObj):
             ray (Ray): transformed ray in local coordinate system.
         """
         # Shift ray origin to surface origin
-        if self.tolerancing:
-            offset = torch.stack(
-                [
-                    self.pos_x + self.decenter_x_error,
-                    self.pos_y + self.decenter_y_error,
-                    self.d + self.d_error,
-                ]
-            ).expand_as(ray.o)
-        else:
-            offset = torch.stack([self.pos_x, self.pos_y, self.d]).expand_as(ray.o)
+        offset = torch.stack([self.pos_x, self.pos_y, self.d]).expand_as(ray.o)
         ray.o = ray.o - offset
-
-        if self._R_tilt is not None:
-            ray.o = self._apply_rotation(ray.o, self._R_tilt)
-            ray.d = self._apply_rotation(ray.d, self._R_tilt)
-            ray.d = F.normalize(ray.d, p=2, dim=-1)
 
         # Rotate ray origin and direction
         if self._R_to_local is not None:
@@ -411,22 +392,8 @@ class Surface(DeepObj):
             ray.d = self._apply_rotation(ray.d, self._R_to_global)
             ray.d = F.normalize(ray.d, p=2, dim=-1)
 
-        if self._R_tilt_inv is not None:
-            ray.o = self._apply_rotation(ray.o, self._R_tilt_inv)
-            ray.d = self._apply_rotation(ray.d, self._R_tilt_inv)
-            ray.d = F.normalize(ray.d, p=2, dim=-1)
-
         # Shift ray origin back to global coordinates
-        if self.tolerancing:
-            offset = torch.stack(
-                [
-                    self.pos_x + self.decenter_x_error,
-                    self.pos_y + self.decenter_y_error,
-                    self.d + self.d_error,
-                ]
-            ).expand_as(ray.o)
-        else:
-            offset = torch.stack([self.pos_x, self.pos_y, self.d]).expand_as(ray.o)
+        offset = torch.stack([self.pos_x, self.pos_y, self.d]).expand_as(ray.o)
         ray.o = ray.o + offset
 
         return ray
@@ -507,17 +474,6 @@ class Surface(DeepObj):
         rotated_flat = torch.mm(vectors_flat, R.t())
         # Reshape back to original shape
         return rotated_flat.view(original_shape)
-
-    @staticmethod
-    def _tilt_rotation_matrix(angle, device="cpu"):
-        """Rotation matrix for surface tilt about the x-axis."""
-        cos_a = math.cos(angle)
-        sin_a = math.sin(angle)
-        return torch.tensor(
-            [[1, 0, 0], [0, cos_a, sin_a], [0, -sin_a, cos_a]],
-            dtype=torch.get_default_dtype(),
-            device=device,
-        )
 
     # =====================================================================
     # Computation functions
@@ -696,74 +652,6 @@ class Surface(DeepObj):
         """Update surface radius."""
         r_max = self.max_height()
         self.r = min(r, r_max)
-
-    # =====================================================================
-    # Tolerancing
-    # =====================================================================
-    def init_tolerance(self, tolerance_params=None):
-        """Initialize manufacturing tolerance parameters for this surface."""
-        if tolerance_params is None:
-            tolerance_params = {}
-
-        self.r_tole = tolerance_params.get("r_tole", 0.05)
-        self.d_tole = tolerance_params.get("d_tole", 0.05)
-        self.decenter_tole = tolerance_params.get("decenter_tole", 0.1)
-        self.tilt_tole = tolerance_params.get("tilt_tole", 0.1)
-        self.mat2_n_tole = tolerance_params.get("mat2_n_tole", 0.001)
-
-        self.r_error = 0.0
-        self.d_error = 0.0
-        self.decenter_x_error = 0.0
-        self.decenter_y_error = 0.0
-        self.tilt_error = 0.0
-        self.mat2_n_error = 0.0
-        self._R_tilt = None
-        self._R_tilt_inv = None
-
-    @torch.no_grad()
-    def sample_tolerance(self):
-        """Sample one set of random manufacturing errors for this surface."""
-        self.r_error = float(np.random.uniform(-self.r_tole, 0))
-        self.d_error = float(np.random.randn() * self.d_tole)
-        self.decenter_x_error = float(np.random.randn() * self.decenter_tole)
-        self.decenter_y_error = float(np.random.randn() * self.decenter_tole)
-        tilt_arcmin = float(np.random.randn() * self.tilt_tole)
-        self.tilt_error = tilt_arcmin / 60.0 * np.pi / 180.0
-        self.mat2_n_error = float(np.random.randn() * self.mat2_n_tole)
-
-        if abs(self.tilt_error) > 1e-12:
-            self._R_tilt = self._tilt_rotation_matrix(self.tilt_error, self.device)
-            self._R_tilt_inv = self._tilt_rotation_matrix(-self.tilt_error, self.device)
-        else:
-            self._R_tilt = None
-            self._R_tilt_inv = None
-
-        self.tolerancing = True
-
-    def zero_tolerance(self):
-        """Reset manufacturing errors to the nominal state."""
-        self.r_error = 0.0
-        self.d_error = 0.0
-        self.decenter_x_error = 0.0
-        self.decenter_y_error = 0.0
-        self.tilt_error = 0.0
-        self.mat2_n_error = 0.0
-        self._R_tilt = None
-        self._R_tilt_inv = None
-        self.tolerancing = False
-
-    def sensitivity_score(self):
-        """Compute first-order tolerance sensitivity scores via RSS formula."""
-        score_dict = {}
-        idx = getattr(self, "surf_idx", id(self))
-
-        if self.d.grad is not None:
-            score_dict[f"surf{idx}_d_grad"] = round(self.d.grad.item(), 6)
-            score_dict[f"surf{idx}_d_score"] = round(
-                (self.d_tole**2 * self.d.grad**2).item(), 6
-            )
-
-        return score_dict
 
     # =====================================================================
     # Visualization

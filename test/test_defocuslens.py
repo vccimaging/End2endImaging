@@ -1,20 +1,27 @@
 """
-Tests for end2end_imaging/paraxiallens.py - Paraxial lens model.
+Tests for end2end_imaging/defocuslens.py - Defocus lens model.
 """
 
 import pytest
 import torch
 
-from end2end_imaging.deeplens import ParaxialLens
+from end2end_imaging.deeplens import DefocusLens
 from end2end_imaging.deeplens.config import DEPTH
 
 
-class TestParaxialLensInit:
-    """Test ParaxialLens initialization."""
+def test_paraxial_lens_is_not_exported():
+    """The old ParaxialLens name should not remain in the public API."""
+    import end2end_imaging.deeplens as deeplens
 
-    def test_paraxial_init(self, device_auto):
+    assert not hasattr(deeplens, "ParaxialLens")
+
+
+class TestDefocusLensInit:
+    """Test DefocusLens initialization."""
+
+    def test_defocus_init(self, device_auto):
         """Should initialize with basic parameters."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -25,12 +32,12 @@ class TestParaxialLensInit:
         assert lens.foclen == 50.0
         assert lens.fnum == 1.8
 
-    def test_paraxial_aperture_radius(self, device_auto):
+    def test_defocus_aperture_radius(self, device_auto):
         """Aperture radius calculation check."""
         foclen = 50.0
         fnum = 2.0
         
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=foclen,
             fnum=fnum,
             sensor_size=(20.0, 20.0),
@@ -38,17 +45,17 @@ class TestParaxialLensInit:
             device=device_auto,
         )
         
-        # ParaxialLens doesn't expose 'r' directly, so we just verify parameters
+        # DefocusLens doesn't expose 'r' directly, so we just verify parameters
         assert lens.foclen == foclen
         assert lens.fnum == fnum
 
 
-class TestParaxialLensRefocus:
+class TestDefocusLensRefocus:
     """Test lens refocusing."""
 
-    def test_paraxial_refocus(self, device_auto):
+    def test_defocus_refocus(self, device_auto):
         """Should change focus distance."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -62,9 +69,9 @@ class TestParaxialLensRefocus:
         assert lens.foc_dist != original_foc
         assert lens.foc_dist == -1000.0
 
-    def test_paraxial_refocus_infinity(self, device_auto):
+    def test_defocus_refocus_infinity(self, device_auto):
         """Should handle infinity focus."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -77,12 +84,12 @@ class TestParaxialLensRefocus:
         assert lens.foc_dist == DEPTH
 
 
-class TestParaxialLensCoC:
+class TestDefocusLensCoC:
     """Test circle of confusion calculation."""
 
-    def test_paraxial_coc_at_focus(self, device_auto):
+    def test_defocus_coc_at_focus(self, device_auto):
         """CoC should be zero at focus distance."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -96,9 +103,9 @@ class TestParaxialLensCoC:
         
         assert coc.item() == pytest.approx(0.0, abs=0.01)
 
-    def test_paraxial_coc_out_of_focus(self, device_auto):
+    def test_defocus_coc_out_of_focus(self, device_auto):
         """CoC should increase out of focus."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -117,9 +124,9 @@ class TestParaxialLensCoC:
         assert coc_near.abs().item() > 0
         assert coc_far.abs().item() > 0
 
-    def test_paraxial_coc_batch(self, device_auto):
+    def test_defocus_coc_batch(self, device_auto):
         """Should handle batch of depths."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -134,12 +141,12 @@ class TestParaxialLensCoC:
         assert cocs.shape == depths.shape
 
 
-class TestParaxialLensDoF:
+class TestDefocusLensDoF:
     """Test depth of field calculation."""
 
-    def test_paraxial_dof_exists(self, device_auto):
+    def test_defocus_dof_exists(self, device_auto):
         """Should calculate positive DoF."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -155,16 +162,16 @@ class TestParaxialLensDoF:
         
         assert dof.item() > 0
 
-    def test_paraxial_coc_fnum_dependence(self, device_auto):
+    def test_defocus_coc_fnum_dependence(self, device_auto):
         """Larger f-number (smaller aperture) should give smaller CoC."""
-        lens1 = ParaxialLens(
+        lens1 = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
             sensor_res=(1000, 1000),
             device=device_auto,
         )
-        lens2 = ParaxialLens(
+        lens2 = DefocusLens(
             foclen=50.0,
             fnum=8.0,
             sensor_size=(20.0, 20.0),
@@ -182,12 +189,12 @@ class TestParaxialLensDoF:
         assert coc2.item() < coc1.item()
 
 
-class TestParaxialLensPSF:
+class TestDefocusLensPSF:
     """Test PSF generation."""
 
-    def test_paraxial_psf_gaussian(self, device_auto):
+    def test_defocus_psf_gaussian(self, device_auto):
         """Should generate Gaussian PSF."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -205,9 +212,9 @@ class TestParaxialLensPSF:
         assert psf.shape[-2:] == (31, 31)
         assert psf.sum().item() == pytest.approx(1.0, abs=0.1)
 
-    def test_paraxial_psf_pillbox(self, device_auto):
+    def test_defocus_psf_pillbox(self, device_auto):
         """Should generate pillbox PSF."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -223,9 +230,9 @@ class TestParaxialLensPSF:
         assert psf.shape[-2:] == (31, 31)
         assert psf.sum().item() == pytest.approx(1.0, abs=0.1)
 
-    def test_paraxial_psf_in_focus_sharp(self, device_auto):
+    def test_defocus_psf_in_focus_sharp(self, device_auto):
         """PSF at focus should be sharp (small)."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -243,9 +250,9 @@ class TestParaxialLensPSF:
         # In-focus PSF should be more concentrated (higher peak)
         assert psf_focus.max() > psf_defocus.max()
 
-    def test_paraxial_psf_rgb(self, device_auto):
+    def test_defocus_psf_rgb(self, device_auto):
         """Should generate RGB PSF."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -261,9 +268,9 @@ class TestParaxialLensPSF:
         # Expect [N, 3, ks, ks] or [3, ks, ks]
         assert psf_rgb.shape[-3:] == (3, 31, 31)
 
-    def test_paraxial_psf_batch(self, device_auto):
+    def test_defocus_psf_batch(self, device_auto):
         """Should handle batch of points."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -284,12 +291,12 @@ class TestParaxialLensPSF:
         assert psf.shape[-3:] == (3, 31, 31)
 
 
-class TestParaxialLensDualPixel:
+class TestDefocusLensDualPixel:
     """Test dual-pixel PSF generation."""
 
-    def test_paraxial_psf_dp(self, device_auto):
+    def test_defocus_psf_dp(self, device_auto):
         """Should generate dual-pixel PSFs."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -305,9 +312,9 @@ class TestParaxialLensDualPixel:
         assert psf_left.shape[-2:] == (31, 31)
         assert psf_right.shape[-2:] == (31, 31)
 
-    def test_paraxial_psf_dp_disparity(self, device_auto):
+    def test_defocus_psf_dp_disparity(self, device_auto):
         """Left and right PSFs should have disparity."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -324,9 +331,9 @@ class TestParaxialLensDualPixel:
         diff = (psf_left - psf_right).abs().sum()
         assert diff.item() > 0.01
 
-    def test_paraxial_psf_rgb_dp(self, device_auto):
+    def test_defocus_psf_rgb_dp(self, device_auto):
         """Should generate RGB dual-pixel PSFs."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -343,12 +350,12 @@ class TestParaxialLensDualPixel:
         assert psf_right.shape[-3:] == (3, 31, 31)
 
 
-class TestParaxialLensPSFMap:
+class TestDefocusLensPSFMap:
     """Test PSF map generation."""
 
-    def test_paraxial_psf_map(self, device_auto):
+    def test_defocus_psf_map(self, device_auto):
         """Should generate PSF map."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -362,9 +369,9 @@ class TestParaxialLensPSFMap:
         # psf_map: [grid_y, grid_x, 1, ks, ks]
         assert psf_map.shape == (3, 3, 1, 31, 31)
 
-    def test_paraxial_psf_map_dp(self, device_auto):
+    def test_defocus_psf_map_dp(self, device_auto):
         """Should generate dual-pixel PSF map."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -379,12 +386,12 @@ class TestParaxialLensPSFMap:
         assert psf_map_right.shape == (3, 3, 1, 31, 31)
 
 
-class TestParaxialLensRendering:
+class TestDefocusLensRendering:
     """Test RGBD rendering."""
 
-    def test_paraxial_render_rgbd_dp(self, device_auto):
+    def test_defocus_render_rgbd_dp(self, device_auto):
         """Should render dual-pixel images from RGBD."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -403,12 +410,12 @@ class TestParaxialLensRendering:
         assert img_right.shape == rgb.shape
 
 
-class TestParaxialLensRenderRGBD:
+class TestDefocusLensRenderRGBD:
     """Test occlusion-aware RGBD rendering."""
 
     def test_render_rgbd_shape(self, device_auto):
         """Should return correct output shape."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -425,7 +432,7 @@ class TestParaxialLensRenderRGBD:
 
     def test_render_rgbd_uniform_depth(self, device_auto):
         """With uniform depth, result should be valid and non-zero."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -442,8 +449,8 @@ class TestParaxialLensRenderRGBD:
         assert result.sum() > 0
 
     def test_render_rgbd_method_equivalence(self, device_auto):
-        """All methods should produce identical results for paraxial lens."""
-        lens = ParaxialLens(
+        """All methods should produce identical results for defocus lens."""
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -464,7 +471,7 @@ class TestParaxialLensRenderRGBD:
 
     def test_render_rgbd_depth_discontinuity(self, device_auto):
         """Should handle depth discontinuities (occlusion scenario)."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),
@@ -486,7 +493,7 @@ class TestParaxialLensRenderRGBD:
 
     def test_render_rgbd_3d_depth_input(self, device_auto):
         """Should handle [B, H, W] depth input."""
-        lens = ParaxialLens(
+        lens = DefocusLens(
             foclen=50.0,
             fnum=1.8,
             sensor_size=(20.0, 20.0),

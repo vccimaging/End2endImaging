@@ -20,7 +20,7 @@ Abstract base class for all lens types. Defines the shared interface: `psf()`, `
 
 Differentiable multi-element refractive lens via geometric ray tracing. This is the primary lens model.
 
-`GeoLens` uses a mixin architecture — functionality is split across `GeoLensPSF`, `GeoLensEval`, `GeoLensSeidel`, `GeoLensOptim`, `GeoLensSurfOps`, `GeoLensVis`, `GeoLensIO`, `GeoLensTolerance`, and `GeoLensVis3D`.
+`GeoLens` uses a mixin architecture — functionality is split across `GeoLensPSF`, `GeoLensEval`, `GeoLensSeidel`, `GeoLensOptim`, `GeoLensSurfOps`, `GeoLensVis`, `GeoLensIO`, and `GeoLensVis3D`.
 
 ::: end2end_imaging.deeplens.GeoLens
 
@@ -38,8 +38,6 @@ Differentiable multi-element refractive lens via geometric ray tracing. This is 
 
 ::: end2end_imaging.deeplens.geolens_pkg.vis.GeoLensVis
 
-::: end2end_imaging.deeplens.geolens_pkg.eval_tolerance.GeoLensTolerance
-
 ::: end2end_imaging.deeplens.geolens_pkg.vis3d.GeoLensVis3D
 
 Combines a `GeoLens` with a diffractive optical element (DOE). Performs coherent ray tracing to the DOE plane, then Angular Spectrum Method (ASM) propagation to the sensor.
@@ -52,7 +50,7 @@ Pure wave-optics lens using diffractive surfaces and scalar diffraction propagat
 
 Thin-lens / circle-of-confusion model for simple depth-of-field and bokeh simulation.
 
-::: end2end_imaging.deeplens.ParaxialLens
+::: end2end_imaging.deeplens.DefocusLens
 
 Neural surrogate that wraps a `GeoLens` with an MLP to predict PSFs. Useful for fast, differentiable PSF evaluation during end-to-end training.
 

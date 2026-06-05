@@ -387,8 +387,8 @@ class DefocusLens(Lens):
             depth_map (tensor): Depth map [mm]. Shape [B, 1, H, W]. Values should be positive.
             psf_ks (int, optional): PSF kernel size. Defaults to PSF_KS.
             num_layers (int, optional): Number of depth layers. Defaults to 16.
-            method (str, optional): Accepted for ParaxialLens compatibility
-                and ignored because defocus PSFs are spatially invariant.
+            method (str, optional): Rendering method selector accepted for API
+                compatibility and ignored because defocus PSFs are spatially invariant.
 
         Returns:
             img_render (tensor): Rendered image. Shape [B, C, H, W].

@@ -26,7 +26,6 @@ class Aperture(Plane):
             is_square=is_square,
             device=device,
         )
-        self.tolerancing = False
         self.to(device)
 
     @classmethod

@@ -110,7 +110,7 @@ class Camera(Renderer):
                 types; additionally ``.zmx`` / ``.seq`` for ``"geolens"``.
             sensor_file (str): Path to a JSON sensor configuration file.
             lens_type (str, optional): Lens model.  One of ``"geolens"``
-                (default), ``"hybridlens"``, ``"paraxiallens"``,
+                (default), ``"hybridlens"``, ``"defocuslens"``,
                 ``"diffraclens"``.
             sensor_type (str, optional): Sensor model.  One of ``"simple"``,
                 ``"rgb"`` (default), ``"mono"``, ``"event"``.
@@ -159,10 +159,10 @@ class Camera(Renderer):
             from end2end_imaging.deeplens import HybridLens
 
             self.lens = HybridLens(lens_file, device=device)
-        elif lens_type == "paraxiallens":
-            from end2end_imaging.deeplens import ParaxialLens
+        elif lens_type == "defocuslens":
+            from end2end_imaging.deeplens import DefocusLens
 
-            self.lens = ParaxialLens(lens_file, device=device)
+            self.lens = DefocusLens(lens_file, device=device)
         elif lens_type == "diffraclens":
             from end2end_imaging.deeplens import DiffractiveLens
 

@@ -33,7 +33,6 @@ from .geolens_pkg.io import GeoLensIO
 from .geolens_pkg.optim import GeoLensOptim
 from .geolens_pkg.psf_compute import GeoLensPSF
 from .geolens_pkg.optim_ops import GeoLensSurfOps
-from .geolens_pkg.eval_tolerance import GeoLensTolerance
 from .geolens_pkg.vis3d import GeoLensVis3D
 from .geolens_pkg.vis import GeoLensVis
 from .imgsim import backward_integral
@@ -49,7 +48,6 @@ class GeoLens(
     GeoLensSurfOps,
     GeoLensVis,
     GeoLensIO,
-    GeoLensTolerance,
     GeoLensVis3D,
     Lens,
 ):

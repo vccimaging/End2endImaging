@@ -19,7 +19,7 @@ The optics package is the core module for optical simulations. It hosts all lens
     -   `geolens.py`: `GeoLens` — refractive lens systems (ray tracing).
     -   `diffraclens.py`: `DiffractiveLens` — paraxial diffractive lens systems.
     -   `hybridlens.py`: `HybridLens` — hybrid refractive-diffractive systems.
-    -   `paraxiallens.py`: `ParaxialLens` — paraxial (thin lens) model for defocus.
+    -   `defocuslens.py`: `DefocusLens` — circle-of-confusion model for defocus.
     -   `psfnetlens.py`: `PSFNetLens` — neural surrogate for PSF prediction.
 
 -   **`config.py`**: Optics configuration constants (DEPTH, SPP_*, PSF_KS, WAVE_RGB, EPSILON, etc.).
@@ -40,7 +40,7 @@ The optics package is the core module for optical simulations. It hosts all lens
 
 -   **`imgsim/`**: Image simulation (Monte Carlo, PSF convolution, depth interpolation).
 
--   **`geolens_pkg/`**: GeoLens helpers (I/O, optimization, evaluation, tolerance, visualization).
+-   **`geolens_pkg/`**: GeoLens helpers (I/O, optimization, evaluation, visualization).
 
 -   **`loss.py`**: PSF-related loss functions for optical optimization.
 
