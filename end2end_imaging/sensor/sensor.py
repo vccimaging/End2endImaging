@@ -20,11 +20,12 @@ class Sensor(nn.Module):
     The simplest sensor model: records physical size and resolution, and
     applies only a gamma correction in the ISP forward pass.  For a sensor
     with noise simulation and Bayer demosaicing use
-    :class:`~end2end_imaging.sensor.rgb_sensor.RGBSensor`.
+    [`RGBSensor`][end2end_imaging.sensor.rgb_sensor.RGBSensor].
 
     Attributes:
         size (tuple): Physical sensor size (W, H) [mm].
         res (tuple): Pixel resolution (W, H).
+        pixel_size (float): Physical pixel pitch [mm], ``size[0] / res[0]``.
         isp (nn.Sequential): ISP pipeline (``GammaCorrection`` by default).
 
     Example:
@@ -72,6 +73,14 @@ class Sensor(nn.Module):
         )
 
     def to(self, device):
+        """Move the sensor and its ISP pipeline to a device.
+
+        Args:
+            device: Target device (e.g. ``torch.device("cuda")``).
+
+        Returns:
+            Sensor: This sensor instance, for call chaining.
+        """
         self.device = device
         self.isp.to(device)
         return self

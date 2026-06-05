@@ -38,6 +38,16 @@ class SimpleISP(nn.Module):
         color_matrix=None,
         gamma_param=2.2,
     ):
+        """Initialize the simple ISP pipeline.
+
+        Args:
+            bit (int): Bit depth of the input bayer image. Default 10.
+            black_level (float): Black level value to subtract. Default 64.
+            bayer_pattern (str): Bayer pattern of the input. Default "rggb".
+            color_matrix (optional): Color correction matrix. If None, the
+                ColorCorrectionMatrix module uses its default.
+            gamma_param (float): Gamma parameter. Default 2.2.
+        """
         super().__init__()
 
         self.bit = bit
@@ -55,13 +65,14 @@ class SimpleISP(nn.Module):
         )
 
     def forward(self, bayer_nbit):
-        """Simulate sensor output.
+        """Run the simple ISP pipeline on a RAW bayer image.
 
         Args:
-            bayer_nbit: Input bayer pattern tensor.
+            bayer_nbit: Input tensor of shape [B, 1, H, W], data range
+                [~black_level, 2^bit-1].
 
         Returns:
-            Processed RGB image.
+            rgb: RGB image of shape [B, 3, H, W], data range [0, 1].
         """
         return self.isp(bayer_nbit)
 
@@ -69,7 +80,7 @@ class SimpleISP(nn.Module):
 class InvertibleISP(nn.Module):
     """Invertible and differentiable Bayer-sRGB ISP pipeline.
 
-    Rerference:
+    Reference:
         [1] Architectural Analysis of a Baseline ISP Pipeline. https://link.springer.com/chapter/10.1007/978-94-017-9987-4_2. (page 23, 50)
     """
 
@@ -82,6 +93,18 @@ class InvertibleISP(nn.Module):
         color_matrix=None,
         gamma_param=2.2,
     ):
+        """Initialize the invertible ISP pipeline.
+
+        Args:
+            bit (int): Bit depth of the input bayer image. Default 10.
+            black_level (float): Black level value to subtract. Default 64.
+            bayer_pattern (str): Bayer pattern of the input. Default "rggb".
+            white_balance (tuple): Manual white balance gains (R, G, B).
+                Default (2.0, 1.0, 1.8).
+            color_matrix (optional): Color correction matrix. If None, the
+                ColorCorrectionMatrix module uses its default.
+            gamma_param (float): Gamma parameter. Default 2.2.
+        """
         super().__init__()
 
         self.bit = bit
@@ -109,7 +132,7 @@ class InvertibleISP(nn.Module):
         """A basic differentiable and invertible ISP pipeline.
 
         Args:
-            bayer_Nbit: Input tensor of shape [B, 1, H, W], data range [~black_level, 2^bit-1].
+            bayer_nbit: Input tensor of shape [B, 1, H, W], data range [~black_level, 2^bit-1].
 
         Returns:
             rgb: Output tensor of shape [B, 3, H, W], data range [0, 1].
@@ -143,6 +166,13 @@ class OpenISP(nn.Module):
     """
 
     def __init__(self, bit=10, black_level=64, bayer_pattern="rggb"):
+        """Initialize the OpenISP pipeline.
+
+        Args:
+            bit (int): Bit depth of the input bayer image. Default 10.
+            black_level (float): Black level value to subtract. Default 64.
+            bayer_pattern (str): Bayer pattern of the input. Default "rggb".
+        """
         self.bit = bit
         self.black_level = black_level
         self.bayer_pattern = bayer_pattern

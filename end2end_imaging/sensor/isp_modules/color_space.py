@@ -97,6 +97,9 @@ class ColorSpaceConversion(nn.Module):
 
         Returns:
             converted_image: Output tensor of shape [B, 3, H, W].
+
+        Raises:
+            ValueError: If conversion is not "rgb_to_ycrcb" or "ycrcb_to_rgb".
         """
         if conversion == "rgb_to_ycrcb":
             return self.rgb_to_ycrcb(image)

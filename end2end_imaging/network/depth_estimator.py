@@ -3,7 +3,8 @@
 Uses Depth Anything V2 (from Hugging Face Transformers) to estimate per-pixel
 depth from sRGB inputs, then maps the model's relative inverse-depth output to
 positive metric depth (mm) in a configured scene range. The metric depth is the
-contract expected by :meth:`Camera.render` with ``render_mode="psf_patch_depth_interp"``.
+contract expected by [`Camera.render`][end2end_imaging.camera.Camera.render] with
+``render_mode="psf_patch_depth_interp"``.
 """
 
 import logging
@@ -37,6 +38,9 @@ class DepthAnythingV2Estimator:
         depth_max_mm: Far-plane distance (farthest sampled depth).
         infer_size: Side length (must be a multiple of 14) used for the DA-V2 forward pass.
         device: Compute device. Defaults to CUDA if available.
+
+    Raises:
+        ValueError: If ``infer_size`` is not a multiple of 14.
     """
 
     def __init__(
@@ -79,6 +83,9 @@ class DepthAnythingV2Estimator:
         Returns:
             depth_mm: tensor of shape ``(B, 1, H, W)``, positive mm in
                 ``[depth_min_mm, depth_max_mm]``.
+
+        Raises:
+            ValueError: If ``rgb`` is not a 4-D ``(B, 3, H, W)`` tensor.
         """
         if rgb.dim() != 4 or rgb.shape[1] != 3:
             raise ValueError(f"Expected (B, 3, H, W) sRGB tensor; got {tuple(rgb.shape)}")

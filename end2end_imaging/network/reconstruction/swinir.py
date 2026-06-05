@@ -12,6 +12,16 @@ from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 
 
 class Mlp(nn.Module):
+    """Two-layer MLP with activation and dropout used in transformer blocks.
+
+    Args:
+        in_features (int): Number of input features.
+        hidden_features (int, optional): Number of hidden features. Defaults to ``in_features``.
+        out_features (int, optional): Number of output features. Defaults to ``in_features``.
+        act_layer (nn.Module, optional): Activation layer. Default: nn.GELU
+        drop (float, optional): Dropout rate. Default: 0.0
+    """
+
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
         super().__init__()
         out_features = out_features or in_features
@@ -22,6 +32,7 @@ class Mlp(nn.Module):
         self.drop = nn.Dropout(drop)
 
     def forward(self, x):
+        """Apply the MLP to the input features."""
         x = self.fc1(x)
         x = self.act(x)
         x = self.drop(x)
@@ -31,7 +42,8 @@ class Mlp(nn.Module):
 
 
 def window_partition(x, window_size):
-    """
+    """Partition a feature map into non-overlapping windows.
+
     Args:
         x: (B, H, W, C)
         window_size (int): window size
@@ -46,7 +58,8 @@ def window_partition(x, window_size):
 
 
 def window_reverse(windows, window_size, H, W):
-    """
+    """Reverse the window partition back into a feature map.
+
     Args:
         windows: (num_windows*B, window_size, window_size, C)
         window_size (int): Window size
@@ -112,7 +125,8 @@ class WindowAttention(nn.Module):
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x, mask=None):
-        """
+        """Compute window-based multi-head self-attention.
+
         Args:
             x: input features with shape of (num_windows*B, N, C)
             mask: (0/-inf) mask with shape of (num_windows, Wh*Ww, Wh*Ww) or None
@@ -145,9 +159,18 @@ class WindowAttention(nn.Module):
         return x
 
     def extra_repr(self) -> str:
+        """Return a string with the module's key configuration for ``repr``."""
         return f'dim={self.dim}, window_size={self.window_size}, num_heads={self.num_heads}'
 
     def flops(self, N):
+        """Return the FLOPs for one window with token length ``N``.
+
+        Args:
+            N (int): Number of tokens in a window (Wh*Ww).
+
+        Returns:
+            int: Estimated number of floating point operations.
+        """
         # calculate flops for 1 window with token length of N
         flops = 0
         # qkv = self.qkv(x)
@@ -214,6 +237,15 @@ class SwinTransformerBlock(nn.Module):
         self.register_buffer("attn_mask", attn_mask)
 
     def calculate_mask(self, x_size):
+        """Calculate the attention mask for SW-MSA at the given feature size.
+
+        Args:
+            x_size (tuple[int]): Spatial size ``(H, W)`` of the feature map.
+
+        Returns:
+            torch.Tensor: Attention mask of shape ``(nW, window_size*window_size,
+            window_size*window_size)``.
+        """
         # calculate attention mask for SW-MSA
         H, W = x_size
         img_mask = torch.zeros((1, H, W, 1))  # 1 H W 1
@@ -237,6 +269,15 @@ class SwinTransformerBlock(nn.Module):
         return attn_mask
 
     def forward(self, x, x_size):
+        """Apply the Swin Transformer block to the token sequence.
+
+        Args:
+            x (torch.Tensor): Input tokens of shape ``(B, H*W, C)``.
+            x_size (tuple[int]): Spatial size ``(H, W)`` of the feature map.
+
+        Returns:
+            torch.Tensor: Output tokens of shape ``(B, H*W, C)``.
+        """
         H, W = x_size
         B, L, C = x.shape
         # assert L == H * W, "input feature has wrong size"
@@ -279,10 +320,12 @@ class SwinTransformerBlock(nn.Module):
         return x
 
     def extra_repr(self) -> str:
+        """Return a string with the module's key configuration for ``repr``."""
         return f"dim={self.dim}, input_resolution={self.input_resolution}, num_heads={self.num_heads}, " \
                f"window_size={self.window_size}, shift_size={self.shift_size}, mlp_ratio={self.mlp_ratio}"
 
     def flops(self):
+        """Return the estimated FLOPs of the block at its input resolution."""
         flops = 0
         H, W = self.input_resolution
         # norm1
@@ -314,8 +357,16 @@ class PatchMerging(nn.Module):
         self.norm = norm_layer(4 * dim)
 
     def forward(self, x):
-        """
-        x: B, H*W, C
+        """Merge 2x2 neighboring patches and reduce the channel dimension.
+
+        Args:
+            x (torch.Tensor): Input tokens of shape ``(B, H*W, C)``.
+
+        Returns:
+            torch.Tensor: Merged tokens of shape ``(B, H/2*W/2, 2*C)``.
+
+        Raises:
+            AssertionError: If ``L`` does not equal ``H*W`` or ``H``/``W`` are not even.
         """
         H, W = self.input_resolution
         B, L, C = x.shape
@@ -337,9 +388,11 @@ class PatchMerging(nn.Module):
         return x
 
     def extra_repr(self) -> str:
+        """Return a string with the module's key configuration for ``repr``."""
         return f"input_resolution={self.input_resolution}, dim={self.dim}"
 
     def flops(self):
+        """Return the estimated FLOPs of the patch merging layer."""
         H, W = self.input_resolution
         flops = H * W * self.dim
         flops += (H // 2) * (W // 2) * 4 * self.dim * 2 * self.dim
@@ -395,6 +448,15 @@ class BasicLayer(nn.Module):
             self.downsample = None
 
     def forward(self, x, x_size):
+        """Run the stage's Swin Transformer blocks and optional downsampling.
+
+        Args:
+            x (torch.Tensor): Input tokens of shape ``(B, H*W, C)``.
+            x_size (tuple[int]): Spatial size ``(H, W)`` of the feature map.
+
+        Returns:
+            torch.Tensor: Output tokens after all blocks (and downsampling if set).
+        """
         for blk in self.blocks:
             if self.use_checkpoint:
                 x = checkpoint.checkpoint(blk, x, x_size)
@@ -405,9 +467,11 @@ class BasicLayer(nn.Module):
         return x
 
     def extra_repr(self) -> str:
+        """Return a string with the module's key configuration for ``repr``."""
         return f"dim={self.dim}, input_resolution={self.input_resolution}, depth={self.depth}"
 
     def flops(self):
+        """Return the estimated FLOPs of the layer (all blocks and downsampling)."""
         flops = 0
         for blk in self.blocks:
             flops += blk.flops()
@@ -479,9 +543,20 @@ class RSTB(nn.Module):
             norm_layer=None)
 
     def forward(self, x, x_size):
+        """Apply the residual Swin Transformer block.
+
+        Args:
+            x (torch.Tensor): Input tokens of shape ``(B, H*W, C)``.
+            x_size (tuple[int]): Spatial size ``(H, W)`` of the feature map.
+
+        Returns:
+            torch.Tensor: Output tokens of shape ``(B, H*W, C)`` with a residual
+            connection to the input.
+        """
         return self.patch_embed(self.conv(self.patch_unembed(self.residual_group(x, x_size), x_size))) + x
 
     def flops(self):
+        """Return the estimated FLOPs of the residual Swin Transformer block."""
         flops = 0
         flops += self.residual_group.flops()
         H, W = self.input_resolution
@@ -522,12 +597,21 @@ class PatchEmbed(nn.Module):
             self.norm = None
 
     def forward(self, x):
+        """Flatten a feature map into a token sequence and optionally normalize.
+
+        Args:
+            x (torch.Tensor): Input feature map of shape ``(B, C, H, W)``.
+
+        Returns:
+            torch.Tensor: Token sequence of shape ``(B, H*W, C)``.
+        """
         x = x.flatten(2).transpose(1, 2)  # B Ph*Pw C
         if self.norm is not None:
             x = self.norm(x)
         return x
 
     def flops(self):
+        """Return the estimated FLOPs of the patch embedding (normalization only)."""
         flops = 0
         H, W = self.img_size
         if self.norm is not None:
@@ -536,7 +620,7 @@ class PatchEmbed(nn.Module):
 
 
 class PatchUnEmbed(nn.Module):
-    r""" Image to Patch Unembedding
+    r""" Patch sequence to image (inverse of [`PatchEmbed`][end2end_imaging.network.reconstruction.swinir.PatchEmbed]).
 
     Args:
         img_size (int): Image size.  Default: 224.
@@ -560,21 +644,34 @@ class PatchUnEmbed(nn.Module):
         self.embed_dim = embed_dim
 
     def forward(self, x, x_size):
+        """Reshape a token sequence back into a 2D feature map.
+
+        Args:
+            x (torch.Tensor): Token sequence of shape ``(B, H*W, C)``.
+            x_size (tuple[int]): Spatial size ``(H, W)`` of the output feature map.
+
+        Returns:
+            torch.Tensor: Feature map of shape ``(B, embed_dim, H, W)``.
+        """
         B, HW, C = x.shape
         x = x.transpose(1, 2).view(B, self.embed_dim, x_size[0], x_size[1])  # B Ph*Pw C
         return x
 
     def flops(self):
+        """Return the estimated FLOPs of the patch unembedding (always 0)."""
         flops = 0
         return flops
 
 
 class Upsample(nn.Sequential):
-    """Upsample module.
+    """Upsample module built from conv and pixel-shuffle layers.
 
     Args:
         scale (int): Scale factor. Supported scales: 2^n and 3.
         num_feat (int): Channel number of intermediate features.
+
+    Raises:
+        ValueError: If ``scale`` is not a power of 2 or 3.
     """
 
     def __init__(self, scale, num_feat):
@@ -598,7 +695,9 @@ class UpsampleOneStep(nn.Sequential):
     Args:
         scale (int): Scale factor. Supported scales: 2^n and 3.
         num_feat (int): Channel number of intermediate features.
-
+        num_out_ch (int): Number of output channels.
+        input_resolution (tuple[int], optional): Input resolution, used for FLOPs
+            computation. Default: None
     """
 
     def __init__(self, scale, num_feat, num_out_ch, input_resolution=None):
@@ -610,6 +709,7 @@ class UpsampleOneStep(nn.Sequential):
         super(UpsampleOneStep, self).__init__(*m)
 
     def flops(self):
+        """Return the estimated FLOPs of the one-step upsampler."""
         H, W = self.input_resolution
         flops = H * W * self.num_feat * 3 * 9
         return flops
@@ -639,7 +739,7 @@ class SwinIR(nn.Module):
         use_checkpoint (bool): Whether to use checkpointing to save memory. Default: False
         upscale: Upscale factor. 2/3/4/8 for image SR, 1 for denoising and compress artifact reduction
         img_range: Image range. 1. or 255.
-        upsampler: The reconstruction reconstruction module. 'pixelshuffle'/'pixelshuffledirect'/'nearest+conv'/None
+        upsampler: The image reconstruction module. 'pixelshuffle'/'pixelshuffledirect'/'nearest+conv'/None
         resi_connection: The convolutional block before residual connection. '1conv'/'3conv'
     """
 
@@ -774,13 +874,24 @@ class SwinIR(nn.Module):
 
     @torch.jit.ignore
     def no_weight_decay(self):
+        """Return parameter names that should be excluded from weight decay."""
         return {'absolute_pos_embed'}
 
     @torch.jit.ignore
     def no_weight_decay_keywords(self):
+        """Return parameter name keywords that should be excluded from weight decay."""
         return {'relative_position_bias_table'}
 
     def check_image_size(self, x):
+        """Pad the input so its height and width are multiples of the window size.
+
+        Args:
+            x (torch.Tensor): Input image of shape ``(B, C, H, W)``.
+
+        Returns:
+            torch.Tensor: Reflection-padded image with dimensions divisible by the
+            window size.
+        """
         _, _, h, w = x.size()
         mod_pad_h = (self.window_size - h % self.window_size) % self.window_size
         mod_pad_w = (self.window_size - w % self.window_size) % self.window_size
@@ -788,6 +899,14 @@ class SwinIR(nn.Module):
         return x
 
     def forward_features(self, x):
+        """Run the deep feature extraction stage (patch embed, RSTBs, unembed).
+
+        Args:
+            x (torch.Tensor): Shallow features of shape ``(B, embed_dim, H, W)``.
+
+        Returns:
+            torch.Tensor: Deep features of shape ``(B, embed_dim, H, W)``.
+        """
         x_size = (x.shape[2], x.shape[3])
         x = self.patch_embed(x)
         if self.ape:
@@ -803,6 +922,15 @@ class SwinIR(nn.Module):
         return x
 
     def forward(self, x):
+        """Restore a high-quality image from the degraded input.
+
+        Args:
+            x (torch.Tensor): Input image of shape ``(B, C, H, W)``.
+
+        Returns:
+            torch.Tensor: Reconstructed image of shape ``(B, C, H*upscale,
+            W*upscale)``.
+        """
         H, W = x.shape[2:]
         x = self.check_image_size(x)
         
@@ -840,6 +968,7 @@ class SwinIR(nn.Module):
         return x[:, :, :H*self.upscale, :W*self.upscale]
 
     def flops(self):
+        """Return the estimated total FLOPs of the SwinIR model."""
         flops = 0
         H, W = self.patches_resolution
         flops += H * W * 3 * self.embed_dim * 9

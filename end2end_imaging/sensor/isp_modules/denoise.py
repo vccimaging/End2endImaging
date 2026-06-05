@@ -45,7 +45,13 @@ class Denoise(nn.Module):
             img (torch.Tensor): Input tensor of shape [B, C, H, W], data range [0, 1].
 
         Returns:
-            img_filtered (torch.Tensor): Denoised image, data range [0, 1].
+            img_filtered (torch.Tensor): Denoised image of shape [B, C, H, W],
+                data range [0, 1]. If the method is None or "none", the input is
+                returned unchanged.
+
+        Raises:
+            ValueError: If ``self.method`` is not None, "none", "gaussian", or
+                "bilateral".
         """
         if self.method is None or self.method == "none":
             return img
@@ -127,7 +133,15 @@ class Denoise(nn.Module):
         return img_filtered
 
     def _create_gaussian_kernel(self, kernel_size, sigma):
-        """Create a Gaussian kernel."""
+        """Create a normalized 2D Gaussian kernel.
+
+        Args:
+            kernel_size: Size of the (square) kernel.
+            sigma: Standard deviation of the Gaussian.
+
+        Returns:
+            Gaussian kernel tensor of shape [1, 1, kernel_size, kernel_size].
+        """
         x = torch.arange(kernel_size) - kernel_size // 2
         x = x.float()
 

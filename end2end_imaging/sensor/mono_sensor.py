@@ -29,7 +29,8 @@ class MonoSensor(Sensor):
         wavelengths=None,
         spectral_response=None,
     ):
-        """
+        """Initialize a monochrome sensor.
+
         Args:
             bit (int): Bit depth of the sensor. Default 10.
             black_level (float): Black level value. Default 64.
@@ -96,6 +97,14 @@ class MonoSensor(Sensor):
         )
 
     def to(self, device):
+        """Move the sensor, its ISP pipeline, and spectral response to a device.
+
+        Args:
+            device: Target device (e.g. ``torch.device("cuda")``).
+
+        Returns:
+            MonoSensor: This sensor instance, for call chaining.
+        """
         super().to(device)
         if self.wavelengths is not None:
             self.spectral_response = self.spectral_response.to(device)
@@ -166,7 +175,11 @@ class MonoSensor(Sensor):
             iso: (B,), range [0, 800]
 
         Returns:
-            img_raw_noise: N-bit noisy image, (B, C, H, W), range [0, 2**bit - 1]
+            img_raw_noisy: N-bit noisy image, (B, C, H, W), range [0, 2**bit - 1]
+
+        Raises:
+            ValueError: If any ISO value exceeds 800, since the noise model is
+                only calibrated for low ISO (<= 800).
 
         Reference:
             [1] "Unprocessing Images for Learned Raw Denoising."

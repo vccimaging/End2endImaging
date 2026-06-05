@@ -89,6 +89,13 @@ class NAFNet(nn.Module):
         self.initialize_weights()  
 
     def initialize_weights(self):
+        """Initialize all module weights.
+
+        Uses truncated-normal initialization (std 0.02) for conv and linear
+        layers per the NAFNet paper, sets BatchNorm to identity scale, and
+        zeros the final conv so the global residual yields an exact identity
+        on the first ``out_chan`` input channels at the start of training.
+        """
         # NAFNet has no ReLU (uses SimpleGate); kaiming-relu inflates activations by sqrt(2)
         # at every layer. Use trunc_normal(std=0.02) per the NAFNet paper.
         for m in self.modules():
@@ -139,6 +146,15 @@ class NAFNet(nn.Module):
         return x[:, :, :H, :W]
 
     def check_image_size(self, x):
+        """Pad the input so its spatial dims are divisible by ``padder_size``.
+
+        Args:
+            x: Input tensor of shape ``(B, C, H, W)``.
+
+        Returns:
+            Zero-padded tensor whose height and width are multiples of
+            ``self.padder_size``.
+        """
         _, _, h, w = x.size()
         mod_pad_h = (self.padder_size - h % self.padder_size) % self.padder_size
         mod_pad_w = (self.padder_size - w % self.padder_size) % self.padder_size
@@ -147,6 +163,8 @@ class NAFNet(nn.Module):
 
 
 class LayerNormFunction(torch.autograd.Function):
+    """Autograd function implementing channel-wise LayerNorm for NCHW tensors."""
+
     @staticmethod
     def forward(ctx, x, weight, bias, eps):
         ctx.eps = eps
@@ -178,6 +196,8 @@ class LayerNormFunction(torch.autograd.Function):
 
 
 class LayerNorm2d(nn.Module):
+    """Channel-wise LayerNorm module for 4D ``(B, C, H, W)`` tensors."""
+
     def __init__(self, channels, eps=1e-6):
         super(LayerNorm2d, self).__init__()
         self.register_parameter("weight", nn.Parameter(torch.ones(channels)))
@@ -185,10 +205,26 @@ class LayerNorm2d(nn.Module):
         self.eps = eps
 
     def forward(self, x):
+        """Apply channel-wise LayerNorm to a ``(B, C, H, W)`` tensor."""
         return LayerNormFunction.apply(x, self.weight, self.bias, self.eps)
 
 
 class AvgPool2d(nn.Module):
+    """Adaptive average pooling with test-time local-window support.
+
+    Drop-in replacement for ``nn.AdaptiveAvgPool2d(1)`` that, at inference,
+    derives a pooling window from ``base_size``/``train_size`` to keep the
+    receptive field consistent with training (TLC, "Test-time Local
+    Converter"). An optional ``fast_imp`` path trades exactness for speed.
+
+    Args:
+        kernel_size: Explicit pooling window; inferred from ``base_size`` when None.
+        base_size: Reference window size used to derive ``kernel_size`` at test time.
+        auto_pad: Whether to replicate-pad the output back to the input size.
+        fast_imp: Use the faster, non-equivalent strided implementation.
+        train_size: Training input size used to scale the window at test time.
+    """
+
     def __init__(
         self,
         kernel_size=None,
@@ -215,6 +251,15 @@ class AvgPool2d(nn.Module):
         )
 
     def forward(self, x):
+        """Average-pool ``x`` over a (possibly test-time inferred) local window.
+
+        Args:
+            x: Input tensor of shape ``(B, C, H, W)``.
+
+        Returns:
+            Pooled tensor, replicate-padded back to the input size when
+            ``auto_pad`` is set.
+        """
         if self.kernel_size is None and self.base_size:
             train_size = self.train_size
             if isinstance(self.base_size, int):
@@ -278,6 +323,15 @@ class AvgPool2d(nn.Module):
 
 
 def replace_layers(model, base_size, train_size, fast_imp, **kwargs):
+    """Recursively replace ``nn.AdaptiveAvgPool2d`` modules with ``AvgPool2d``.
+
+    Args:
+        model: Module whose children are scanned in place.
+        base_size: Reference window size passed to the new ``AvgPool2d``.
+        train_size: Training input size passed to the new ``AvgPool2d``.
+        fast_imp: Whether the replacement uses the fast pooling path.
+        **kwargs: Additional keyword arguments forwarded during recursion.
+    """
     for n, m in model.named_children():
         if len(list(m.children())) > 0:
             ## compound module, go inside it
@@ -292,7 +346,20 @@ def replace_layers(model, base_size, train_size, fast_imp, **kwargs):
 
 
 class Local_Base:
+    """Mixin that swaps global pooling for local pooling via [`replace_layers`][end2end_imaging.network.reconstruction.nafnet.replace_layers]."""
+
     def convert(self, *args, train_size, **kwargs):
+        """Replace global pooling layers and run a dummy forward to set windows.
+
+        Args:
+            *args: Positional arguments forwarded to
+                [`replace_layers`][end2end_imaging.network.reconstruction.nafnet.replace_layers]
+                (e.g. ``base_size``, ``fast_imp``).
+            train_size: Training input size used to build the dummy tensor and
+                configure the local pooling windows.
+            **kwargs: Additional keyword arguments forwarded to
+                [`replace_layers`][end2end_imaging.network.reconstruction.nafnet.replace_layers].
+        """
         replace_layers(self, *args, train_size=train_size, **kwargs)
         imgs = torch.rand(train_size)
         with torch.no_grad():
@@ -300,12 +367,35 @@ class Local_Base:
 
 
 class SimpleGate(nn.Module):
+    """Gating layer that splits channels in half and multiplies the two halves."""
+
     def forward(self, x):
+        """Split the channel dimension in two and return their element-wise product.
+
+        Args:
+            x: Input tensor of shape ``(B, C, H, W)`` with even ``C``.
+
+        Returns:
+            Tensor of shape ``(B, C // 2, H, W)``.
+        """
         x1, x2 = x.chunk(2, dim=1)
         return x1 * x2
 
 
 class NAFBlock(nn.Module):
+    """Nonlinear Activation Free block.
+
+    Combines a depthwise-conv branch with Simplified Channel Attention and a
+    feed-forward branch, both using SimpleGate instead of nonlinear
+    activations, with learnable residual scales ``beta`` and ``gamma``.
+
+    Args:
+        c: Number of input/output channels.
+        DW_Expand: Channel expansion factor for the depthwise branch. Defaults to 2.
+        FFN_Expand: Channel expansion factor for the feed-forward branch. Defaults to 2.
+        drop_out_rate: Dropout probability; 0 disables dropout. Defaults to 0.0.
+    """
+
     def __init__(self, c, DW_Expand=2, FFN_Expand=2, drop_out_rate=0.0):
         super().__init__()
         dw_channel = c * DW_Expand
@@ -388,6 +478,14 @@ class NAFBlock(nn.Module):
         self.gamma = nn.Parameter(torch.zeros((1, c, 1, 1)), requires_grad=True)
 
     def forward(self, inp):
+        """Apply the attention and feed-forward branches with residual scaling.
+
+        Args:
+            inp: Input tensor of shape ``(B, c, H, W)``.
+
+        Returns:
+            Output tensor of shape ``(B, c, H, W)``.
+        """
         x = inp
 
         x = self.norm1(x)

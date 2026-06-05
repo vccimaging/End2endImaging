@@ -73,6 +73,17 @@ class UNet(nn.Module):
 
 
 class BasicBlock(nn.Module):
+    """Densely connected conv block used as the UNet building unit.
+
+    Applies three Conv+PReLU layers, concatenates their outputs with the input
+    along the channel dimension, then projects to ``out_channels`` with a final
+    Conv+PReLU.
+
+    Args:
+        in_channels: Number of input channels.
+        out_channels: Number of output channels.
+    """
+
     def __init__(self, in_channels, out_channels):
         super().__init__()
         layers = []
@@ -94,6 +105,14 @@ class BasicBlock(nn.Module):
         )
 
     def forward(self, x):
+        """Apply the dense conv block.
+
+        Args:
+            x: Input tensor of shape ``(B, in_channels, H, W)``.
+
+        Returns:
+            Output tensor of shape ``(B, out_channels, H, W)``.
+        """
         out = []
         out.append(x)
         for layers in self.main:

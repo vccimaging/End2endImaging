@@ -27,6 +27,9 @@ class ToneMapping(nn.Module):
         Args:
             method: Tone mapping method, one of "reinhard", "aces", "hable".
             exposure: Exposure multiplier applied before tone mapping.
+
+        Raises:
+            ValueError: If ``method`` is not one of "reinhard", "aces", "hable".
         """
         super().__init__()
         if method not in ("reinhard", "aces", "hable"):
@@ -89,6 +92,12 @@ class ToneMapping(nn.Module):
         f(x) = (ax^2 + bx) / (cx^2 + dx + e)
              = x(ax + b) / (x(cx + d) + e)
 
+        Args:
+            x: Exposure-scaled linear values.
+
+        Returns:
+            Tone-mapped values.
+
         Reference:
             [1] Narkowicz, "ACES Filmic Tone Mapping Curve", 2015.
         """
@@ -106,6 +115,12 @@ class ToneMapping(nn.Module):
         From  y = x(ax+b) / (x(cx+d)+e),  rearrange to
         (a - cy) x^2 + (b - dy) x - ey = 0
         and solve for x using the quadratic formula.
+
+        Args:
+            y: Tone-mapped values to invert.
+
+        Returns:
+            Recovered linear values (positive root, clamped to >= 0).
         """
         a = 2.51
         b = 0.03
@@ -131,6 +146,12 @@ class ToneMapping(nn.Module):
 
         f(x) = ((x(Ax+CB)+DE) / (x(Ax+B)+DF)) - E/F
 
+        Args:
+            x: Input values.
+
+        Returns:
+            Partial (un-normalized) tone-mapped values.
+
         Reference:
             [1] Hable, "Filmic Tonemapping Operators", GDC 2010.
         """
@@ -144,7 +165,14 @@ class ToneMapping(nn.Module):
 
     @classmethod
     def _hable(cls, x):
-        """Hable / Uncharted 2 tone mapping with white point normalization."""
+        """Hable / Uncharted 2 tone mapping with white point normalization.
+
+        Args:
+            x: Exposure-scaled linear values.
+
+        Returns:
+            Tone-mapped values normalized by the linear white point (W = 11.2).
+        """
         W = 11.2  # linear white point
         return cls._hable_partial(x) / cls._hable_partial(torch.tensor(W, device=x.device))
 
