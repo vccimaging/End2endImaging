@@ -41,7 +41,7 @@ class VortexPhase(Phase):
             r: Aperture radius [mm].
             d: Axial position [mm].
             charge: Topological charge (integer). Positive for left-handed, negative
-               for right-handed helix.
+                for right-handed helix.
             f0: Phase curvature parameter [mm²] of the co-centered Fresnel term.
                 Physically equivalent to λ·f for a thin lens at wavelength λ and
                 focal length f. ``None`` disables the Fresnel term.
