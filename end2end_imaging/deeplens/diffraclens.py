@@ -250,7 +250,7 @@ class DiffractiveLens(Lens):
             wave (ComplexWave): Input wave field entering the lens system.
 
         Returns:
-            ComplexWave: Output wave field at the sensor plane.
+            wave (ComplexWave): Output wave field at the sensor plane.
         """
         # Propagate to DOE
         for surf in self.surfaces:
@@ -275,21 +275,21 @@ class DiffractiveLens(Lens):
                 full sensor resolution (``max(self.sensor_res)``) is used.
 
         Returns:
-            torch.Tensor: Rendered image after applying lens blur with shape (B, 1, H, W).
+            img_render (torch.Tensor): Rendered image after applying lens blur with shape (B, 1, H, W).
         """
         wvln = self.primary_wvln if wvln is None else wvln
         psf = self.psf_infinite(wvln=wvln, ks=ks).unsqueeze(0)  # (1, ks, ks)
         img_render = conv_psf(img, psf)
         return img_render
 
-    def psf(self, points=None, wvln=None, ks=None, recenter=False, upsample_factor=1, depth=None):
+    def psf(self, points, wvln=None, ks=None, recenter=False, upsample_factor=1):
         """Calculate the monochromatic PSF for one or more point sources.
 
         Off-axis point sources are supported. The signature follows
-        :meth:`deeplens.lens.Lens.psf` and :meth:`deeplens.geolens.GeoLens.psf`.
+        `Lens.psf` and `GeoLens.psf`.
 
         Args:
-            points (torch.Tensor or list, optional): Point source coordinates, shape
+            points (torch.Tensor or list): Point source coordinates, shape
                 ``[N, 3]`` or ``[3]``. ``x, y`` are normalised to ``[-1, 1]``
                 (relative to the sensor half-width/height); ``z`` is the depth
                 in mm (negative; ``-inf`` for an object at infinity).
@@ -307,12 +307,10 @@ class DiffractiveLens(Lens):
                 in the sensor/source-sign convention (a +x source -> +x).
             upsample_factor (int, optional): Field upsampling factor to meet the
                 Nyquist sampling constraint. Defaults to 1.
-            depth (float, optional): Backward-compatible on-axis source depth.
-                Used only when ``points`` is omitted. Defaults to infinity.
 
         Returns:
-            torch.Tensor: PSF intensity map, shape ``[ks, ks]`` for a single
-            point or ``[N, ks, ks]`` for a batch.
+            psf (torch.Tensor): PSF intensity map, shape ``[ks, ks]`` for a single
+                point or ``[N, ks, ks]`` for a batch.
 
         Note:
             A single Angular Spectrum Method (ASM) window is used, so very large
@@ -322,9 +320,6 @@ class DiffractiveLens(Lens):
         """
         wvln = self.primary_wvln if wvln is None else wvln
         ks = max(int(self.sensor_res[0]), int(self.sensor_res[1])) if ks is None else ks
-        if points is None:
-            depth = float("inf") if depth is None else depth
-            points = [0.0, 0.0, depth]
         if not torch.is_tensor(points):
             points = torch.tensor(points, dtype=torch.float64)
         single_point = points.dim() == 1
@@ -351,14 +346,8 @@ class DiffractiveLens(Lens):
                 # so the source physically images to the inverted side (an object
                 # at +x focuses to -x), consistent with the finite-depth point
                 # source below; the inversion is undone by the flip further down.
-                if hasattr(self, "foclen"):
-                    theta_x = math.atan(-x_norm * sensor_w / 2 / self.foclen)
-                    theta_y = math.atan(-y_norm * sensor_h / 2 / self.foclen)
-                elif x_norm == 0.0 and y_norm == 0.0:
-                    theta_x = 0.0
-                    theta_y = 0.0
-                else:
-                    raise AttributeError("off-axis DiffractiveLens.psf requires foclen")
+                theta_x = math.atan(-x_norm * sensor_w / 2 / self.foclen)
+                theta_y = math.atan(-y_norm * sensor_h / 2 / self.foclen)
                 inp_wave = ComplexWave.plane_wave(
                     wvln=wvln,
                     z=0.0,
@@ -369,15 +358,9 @@ class DiffractiveLens(Lens):
                 ).to(self.device)
             else:
                 # Finite-depth source: spherical wave from the object point.
-                if hasattr(self, "foclen"):
-                    scale = -depth / self.foclen  # object height / image height
-                    obj_x = x_norm * scale * sensor_w / 2
-                    obj_y = y_norm * scale * sensor_h / 2
-                elif x_norm == 0.0 and y_norm == 0.0:
-                    obj_x = 0.0
-                    obj_y = 0.0
-                else:
-                    raise AttributeError("off-axis DiffractiveLens.psf requires foclen")
+                scale = -depth / self.foclen  # object height / image height
+                obj_x = x_norm * scale * sensor_w / 2
+                obj_y = y_norm * scale * sensor_h / 2
                 inp_wave = ComplexWave.point_wave(
                     point=[obj_x, obj_y, depth],
                     phy_size=field_size,
@@ -552,8 +535,8 @@ class DiffractiveLens(Lens):
                 optimize. If None, all diffractive surfaces are optimized.
 
         Returns:
-            torch.optim.Optimizer: Adam optimizer over the selected surfaces'
-            phase parameters.
+            optimizer (torch.optim.Optimizer): Adam optimizer over the selected surfaces'
+                phase parameters.
         """
         if optim_surf_ls is None:
             optim_surf_ls = list(range(len(self.surfaces)))

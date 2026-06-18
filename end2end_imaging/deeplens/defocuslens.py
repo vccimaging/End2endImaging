@@ -241,10 +241,10 @@ class DefocusLens(Lens):
         Args:
             points (torch.Tensor): Point source positions, shape ``[N, 3]``.
             ks (int, optional): Kernel size. Defaults to ``PSF_KS``.
-            **kwargs: Forwarded to :meth:`psf`.
+            **kwargs: Forwarded to `psf`.
 
         Returns:
-            torch.Tensor: RGB PSFs, shape ``[N, 3, ks, ks]``.
+            psf_rgb (torch.Tensor): RGB PSFs, shape ``[N, 3, ks, ks]``.
         """
         psf = self.psf(points, ks=ks, psf_type="gaussian", **kwargs)
         return psf.unsqueeze(1).repeat(1, 3, 1, 1)
@@ -261,10 +261,10 @@ class DefocusLens(Lens):
             ks (int, optional): Kernel size. Defaults to ``PSF_KS``.
             depth (float, optional): Object depth [mm]. When ``None`` (default),
                 falls back to ``self.obj_depth``.
-            **kwargs: Forwarded to :meth:`psf`.
+            **kwargs: Forwarded to `psf`.
 
         Returns:
-            torch.Tensor: PSF map, shape ``[rows, cols, 1, ks, ks]``.
+            psf_map (torch.Tensor): PSF map, shape ``[rows, cols, 1, ks, ks]``.
         """
         depth = self.obj_depth if depth is None else depth
         points = torch.tensor([[0, 0, depth]], device=self.device)
@@ -286,7 +286,7 @@ class DefocusLens(Lens):
             ks (int): Kernel size for PSF generation.
 
         Returns:
-            tuple: (left_psf, right_psf) where each PSF tensor has shape [N, ks, ks].
+            result (tuple): (left_psf, right_psf) where each PSF tensor has shape [N, ks, ks].
         """
         depth = points[:, 2]
 
@@ -333,7 +333,7 @@ class DefocusLens(Lens):
             ks (int, optional): Kernel size. Defaults to ``PSF_KS``.
 
         Returns:
-            tuple: ``(psf_left, psf_right)`` each of shape ``[N, 3, ks, ks]``.
+            result (tuple): ``(psf_left, psf_right)`` each of shape ``[N, 3, ks, ks]``.
         """
         psf_l, psf_r = self.psf_dp(points, ks=ks)
         psf_l = psf_l.unsqueeze(1).repeat(1, 3, 1, 1)
@@ -349,10 +349,10 @@ class DefocusLens(Lens):
             ks (int, optional): Kernel size. Defaults to ``PSF_KS``.
             depth (float, optional): Object depth [mm]. When ``None`` (default),
                 falls back to ``self.obj_depth``.
-            **kwargs: Forwarded to :meth:`psf_dp`.
+            **kwargs: Forwarded to `psf_dp`.
 
         Returns:
-            tuple: ``(psf_map_left, psf_map_right)`` each of shape
+            result (tuple): ``(psf_map_left, psf_map_right)`` each of shape
                 ``[rows, cols, 1, ks, ks]``.
         """
         depth = self.obj_depth if depth is None else depth
@@ -371,9 +371,6 @@ class DefocusLens(Lens):
         depth_map,
         psf_ks=PSF_KS,
         num_layers=16,
-        method=None,
-        depth_min=None,
-        depth_max=None,
     ):
         """Occlusion-aware RGBD rendering for defocus lens.
 
@@ -387,8 +384,6 @@ class DefocusLens(Lens):
             depth_map (tensor): Depth map [mm]. Shape [B, 1, H, W]. Values should be positive.
             psf_ks (int, optional): PSF kernel size. Defaults to PSF_KS.
             num_layers (int, optional): Number of depth layers. Defaults to 16.
-            method (str, optional): Rendering method selector accepted for API
-                compatibility and ignored because defocus PSFs are spatially invariant.
 
         Returns:
             img_render (tensor): Rendered image. Shape [B, C, H, W].
@@ -402,14 +397,8 @@ class DefocusLens(Lens):
         if len(depth_map.shape) == 3:
             depth_map = depth_map.unsqueeze(1)  # [B, H, W] -> [B, 1, H, W]
 
-        if isinstance(psf_ks, str):
-            method = psf_ks
-            psf_ks = PSF_KS
-        if method not in (None, "psf_patch", "psf_map", "psf_pixel"):
-            raise ValueError(f"Invalid render_rgbd method: {method}")
-
-        depth_min = depth_map.min() if depth_min is None else depth_min
-        depth_max = depth_map.max() if depth_max is None else depth_max
+        depth_min = depth_map.min()
+        depth_max = depth_map.max()
 
         # Sample depth layers
         disp_ref, depths_ref = self._sample_depth_layers(depth_min, depth_max, num_layers)
