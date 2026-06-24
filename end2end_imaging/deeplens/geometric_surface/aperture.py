@@ -26,6 +26,7 @@ class Aperture(Plane):
             is_square=is_square,
             device=device,
         )
+        self.tolerancing = False
         self.to(device)
 
     @classmethod
@@ -91,7 +92,7 @@ class Aperture(Plane):
             color (List[float]): The color of the mesh.
 
         Returns:
-            self: The surface with mesh data.
+            self (Aperture): The surface with mesh data.
         """
         self.vertices = self._create_vertices(n_rings, n_arms)
         self.faces = self._create_faces(n_rings, n_arms)
