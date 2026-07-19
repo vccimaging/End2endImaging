@@ -16,8 +16,8 @@ the literature and in software such as Blender. It captures defocus but not
 higher-order optical aberrations.
 
 Unique to this model, DefocusLens can also generate dual-pixel (DP) PSFs -- the
-left/right sub-aperture views recorded by dual-pixel sensors -- via ``psf_dp``,
-``psf_rgb_dp``, ``psf_map_dp`` and ``render_rgbd_dp``, which are useful for
+left/right sub-aperture views recorded by dual-pixel sensors -- via `psf_dp`,
+`psf_rgb_dp`, `psf_map_dp` and `render_rgbd_dp`, which are useful for
 defocus- and depth-estimation research.
 
 Reference:
@@ -45,6 +45,8 @@ class DefocusLens(Lens):
     Attributes:
         foclen (float): Focal length [mm].
         fnum (float): F-number.
+        foc_dist (float): Current focus distance [mm], set by `refocus`
+            (conventionally negative).
         sensor_size (tuple): Physical sensor size (W, H) [mm].
         sensor_res (tuple): Pixel resolution (W, H).
         pixel_size (float): Pixel pitch [mm].
@@ -95,11 +97,11 @@ class DefocusLens(Lens):
         """Refocus the lens to a given object distance.
 
         Args:
-            foc_dist (float): Focus distance in [mm].  Must be less than the
-                focal length (i.e. beyond the focal point).
+            foc_dist (float): Focus distance in [mm], conventionally negative
+                (object in front of the lens). Must be less than the focal length.
 
         Raises:
-            AssertionError: If *foc_dist* >= ``self.foclen``.
+            AssertionError: If `foc_dist` is not less than `self.foclen`.
         """
         assert foc_dist < self.foclen, "Focus distance is too close."
         self.foc_dist = foc_dist
@@ -108,18 +110,30 @@ class DefocusLens(Lens):
     # PSF-related functions
     # ===========================================
 
-    def psf(self, points, ks=PSF_KS, psf_type="gaussian", **kwargs):
-        """PSF is modeled as a 2D uniform circular disk with diameter CoC.
+    def psf(self, points, wvln=None, ks=PSF_KS, **kwargs):
+        """Compute the defocus PSF as a circular disk of diameter CoC.
+
+        The PSF is a 2D blur disk whose diameter is the circle of confusion at
+        each object depth, masked to a circle and normalized to sum to 1. With
+        `psf_type="gaussian"` the disk is filled with a Gaussian falloff; with
+        `psf_type="pillbox"` it is a flat-top (uniform) disk. The CoC model is
+        wavelength-independent, so `wvln` is accepted for API uniformity with
+        the other lens types but ignored.
 
         Args:
-            points (torch.Tensor): Points of the object. Shape [N, 3] or [3].
-            ks (int): Kernel size.
-            psf_type (str): PSF type. "gaussian" or "pillbox".
-            **kwargs: Additional arguments for psf(). Currently not used.
+            points (torch.Tensor): Object point positions in [mm], shape [N, 3]
+                or [3]; the depth is taken from the z (third) coordinate.
+            wvln (float or None, optional): Wavelength in [µm]. Ignored (the CoC
+                model is achromatic). Defaults to None.
+            ks (int, optional): PSF kernel size in pixels. Defaults to PSF_KS.
+            **kwargs: Model-specific options. `psf_type` (str): "gaussian"
+                (default) or "pillbox".
 
         Returns:
-            psf (torch.Tensor): PSF kernels. Shape [ks, ks] or [N, ks, ks].
+            psf (torch.Tensor): Normalized PSF kernel(s), shape [ks, ks] for a
+                single point or [N, ks, ks] for N points.
         """
+        psf_type = kwargs.get("psf_type", "gaussian")
         points = points.to(self.device)
 
         # Handle single point vs multiple points
@@ -173,13 +187,18 @@ class DefocusLens(Lens):
         return psf
 
     def coc(self, depth):
-        """Calculate circle of confusion (CoC) diameter [mm].
+        """Compute the circle-of-confusion (CoC) diameter from the paraxial defocus relation.
+
+        Depth is clamped to `[self.d_far, self.d_close]` and taken as an absolute
+        distance before evaluating the CoC.
 
         Args:
-            depth (torch.Tensor): Depth of the object. Shape [B].
+            depth (torch.Tensor): Object depth in [mm], shape [B] (or scalar).
+                Conventionally negative (object in front of the lens).
 
         Returns:
-            coc (torch.Tensor): Circle of confusion diameter [mm]. Shape [B].
+            coc (torch.Tensor): Circle-of-confusion diameter in [mm], same shape
+                as `depth`.
 
         Reference:
             [1] https://en.wikipedia.org/wiki/Circle_of_confusion
@@ -202,13 +221,14 @@ class DefocusLens(Lens):
         return coc
 
     def dof(self, depth):
-        """Calculate depth of field [mm].
+        """Compute the depth of field (DoF) at a given object depth.
 
         Args:
-            depth (torch.Tensor): Depth of the object. Shape [B].
+            depth (torch.Tensor): Object depth in [mm], shape [B] (or scalar).
+                Conventionally negative (object in front of the lens).
 
         Returns:
-            dof (torch.Tensor): Depth of field. Shape [B].
+            dof (torch.Tensor): Depth of field in [mm], same shape as `depth`.
 
         Reference:
             [1] https://en.wikipedia.org/wiki/Depth_of_field
@@ -239,12 +259,12 @@ class DefocusLens(Lens):
         The defocus model is achromatic, so all channels share the same PSF.
 
         Args:
-            points (torch.Tensor): Point source positions, shape ``[N, 3]``.
-            ks (int, optional): Kernel size. Defaults to ``PSF_KS``.
-            **kwargs: Forwarded to :meth:`psf`.
+            points (torch.Tensor): Object point positions in [mm], shape [N, 3].
+            ks (int, optional): PSF kernel size in pixels. Defaults to PSF_KS.
+            **kwargs: Forwarded to `psf`.
 
         Returns:
-            torch.Tensor: RGB PSFs, shape ``[N, 3, ks, ks]``.
+            psf_rgb (torch.Tensor): RGB PSFs, shape [N, 3, ks, ks].
         """
         psf = self.psf(points, ks=ks, psf_type="gaussian", **kwargs)
         return psf.unsqueeze(1).repeat(1, 3, 1, 1)
@@ -256,15 +276,15 @@ class DefocusLens(Lens):
         grid position receives the same on-axis PSF.
 
         Args:
-            grid (tuple, optional): Grid dimensions ``(rows, cols)``.
-                Defaults to ``(5, 5)``.
-            ks (int, optional): Kernel size. Defaults to ``PSF_KS``.
-            depth (float, optional): Object depth [mm]. When ``None`` (default),
-                falls back to ``self.obj_depth``.
-            **kwargs: Forwarded to :meth:`psf`.
+            grid (tuple, optional): Grid dimensions (rows, cols).
+                Defaults to (5, 5).
+            ks (int, optional): PSF kernel size in pixels. Defaults to PSF_KS.
+            depth (float or None, optional): Object depth in [mm]. When None
+                (default), falls back to `self.obj_depth`.
+            **kwargs: Forwarded to `psf`.
 
         Returns:
-            torch.Tensor: PSF map, shape ``[rows, cols, 1, ks, ks]``.
+            psf_map (torch.Tensor): PSF map, shape [rows, cols, 1, ks, ks].
         """
         depth = self.obj_depth if depth is None else depth
         points = torch.tensor([[0, 0, depth]], device=self.device)
@@ -276,17 +296,22 @@ class DefocusLens(Lens):
     # Dual-pixel PSF
     # =============================================
     def psf_dp(self, points, ks=PSF_KS):
-        """Generate dual-pixel PSF for left and right sub-apertures.
+        """Generate left/right dual-pixel PSFs by masking the base PSF.
 
-        This function generates separate PSFs for left and right sub-apertures of a dual pixel sensor,
-        which enables depth estimation and improved autofocus capabilities.
+        Takes the base defocus PSF and splits the aperture vertically into left
+        and right halves to mimic a dual-pixel sensor. The half assigned to each
+        sub-aperture is swapped depending on whether the object is nearer or
+        farther than the focus distance, reproducing the depth-dependent left/right
+        disparity that enables dual-pixel depth estimation and autofocus.
 
         Args:
-            points (torch.Tensor): Input tensor with shape [N, 3], where columns are [x, y, z] coordinates.
-            ks (int): Kernel size for PSF generation.
+            points (torch.Tensor): Object point positions in [mm], shape [N, 3]
+                with columns [x, y, z]; depth is taken from z.
+            ks (int, optional): PSF kernel size in pixels. Defaults to PSF_KS.
 
         Returns:
-            tuple: (left_psf, right_psf) where each PSF tensor has shape [N, ks, ks].
+            psf_l (torch.Tensor): Left sub-aperture PSFs, shape [N, ks, ks].
+            psf_r (torch.Tensor): Right sub-aperture PSFs, shape [N, ks, ks].
         """
         depth = points[:, 2]
 
@@ -329,11 +354,12 @@ class DefocusLens(Lens):
         Replicates the monochrome dual-pixel PSFs across three colour channels.
 
         Args:
-            points (torch.Tensor): Point source positions, shape ``[N, 3]``.
-            ks (int, optional): Kernel size. Defaults to ``PSF_KS``.
+            points (torch.Tensor): Object point positions in [mm], shape [N, 3].
+            ks (int, optional): PSF kernel size in pixels. Defaults to PSF_KS.
 
         Returns:
-            tuple: ``(psf_left, psf_right)`` each of shape ``[N, 3, ks, ks]``.
+            psf_l (torch.Tensor): Left sub-aperture RGB PSFs, shape [N, 3, ks, ks].
+            psf_r (torch.Tensor): Right sub-aperture RGB PSFs, shape [N, 3, ks, ks].
         """
         psf_l, psf_r = self.psf_dp(points, ks=ks)
         psf_l = psf_l.unsqueeze(1).repeat(1, 3, 1, 1)
@@ -344,16 +370,18 @@ class DefocusLens(Lens):
         """Compute spatially-uniform dual-pixel PSF maps.
 
         Args:
-            grid (tuple, optional): Grid dimensions ``(rows, cols)``.
-                Defaults to ``(5, 5)``.
-            ks (int, optional): Kernel size. Defaults to ``PSF_KS``.
-            depth (float, optional): Object depth [mm]. When ``None`` (default),
-                falls back to ``self.obj_depth``.
-            **kwargs: Forwarded to :meth:`psf_dp`.
+            grid (tuple, optional): Grid dimensions (rows, cols).
+                Defaults to (5, 5).
+            ks (int, optional): PSF kernel size in pixels. Defaults to PSF_KS.
+            depth (float or None, optional): Object depth in [mm]. When None
+                (default), falls back to `self.obj_depth`.
+            **kwargs: Forwarded to `psf_dp`.
 
         Returns:
-            tuple: ``(psf_map_left, psf_map_right)`` each of shape
-                ``[rows, cols, 1, ks, ks]``.
+            psf_map_l (torch.Tensor): Left sub-aperture PSF map, shape
+                [rows, cols, 1, ks, ks].
+            psf_map_r (torch.Tensor): Right sub-aperture PSF map, shape
+                [rows, cols, 1, ks, ks].
         """
         depth = self.obj_depth if depth is None else depth
         points = torch.tensor([[0, 0, depth]], device=self.device)
@@ -371,9 +399,6 @@ class DefocusLens(Lens):
         depth_map,
         psf_ks=PSF_KS,
         num_layers=16,
-        method=None,
-        depth_min=None,
-        depth_max=None,
     ):
         """Occlusion-aware RGBD rendering for defocus lens.
 
@@ -383,15 +408,14 @@ class DefocusLens(Lens):
         depth layers.
 
         Args:
-            img_obj (tensor): Object image. Shape [B, C, H, W].
-            depth_map (tensor): Depth map [mm]. Shape [B, 1, H, W]. Values should be positive.
-            psf_ks (int, optional): PSF kernel size. Defaults to PSF_KS.
+            img_obj (torch.Tensor): Object image, shape [B, C, H, W].
+            depth_map (torch.Tensor): Depth map in [mm], shape [B, 1, H, W]
+                (or [B, H, W]). Values must be positive.
+            psf_ks (int, optional): PSF kernel size in pixels. Defaults to PSF_KS.
             num_layers (int, optional): Number of depth layers. Defaults to 16.
-            method (str, optional): Rendering method selector accepted for API
-                compatibility and ignored because defocus PSFs are spatially invariant.
 
         Returns:
-            img_render (tensor): Rendered image. Shape [B, C, H, W].
+            img_render (torch.Tensor): Rendered image, shape [B, C, H, W].
 
         Reference:
             [1] "Dr.Bokeh: DiffeRentiable Occlusion-aware Bokeh Rendering", CVPR 2024.
@@ -402,14 +426,8 @@ class DefocusLens(Lens):
         if len(depth_map.shape) == 3:
             depth_map = depth_map.unsqueeze(1)  # [B, H, W] -> [B, 1, H, W]
 
-        if isinstance(psf_ks, str):
-            method = psf_ks
-            psf_ks = PSF_KS
-        if method not in (None, "psf_patch", "psf_map", "psf_pixel"):
-            raise ValueError(f"Invalid render_rgbd method: {method}")
-
-        depth_min = depth_map.min() if depth_min is None else depth_min
-        depth_max = depth_map.max() if depth_max is None else depth_max
+        depth_min = depth_map.min()
+        depth_max = depth_map.max()
 
         # Sample depth layers
         disp_ref, depths_ref = self._sample_depth_layers(depth_min, depth_max, num_layers)
@@ -436,17 +454,21 @@ class DefocusLens(Lens):
         psf_ks=PSF_KS,
         num_layers=16,
     ):
-        """Render RGBD image with dual-pixel PSF.
+        """Render left/right dual-pixel images from an RGBD input.
+
+        Computes dual-pixel PSFs at uniformly sampled reference depths and convolves
+        the image with depth interpolation to produce the two sub-aperture views.
+        Positive depths are negated internally so the object lies in front of the lens.
 
         Args:
-            rgb_img (tensor): [B, 3, H, W]
-            depth (tensor): [B, 1, H, W]
-            psf_ks (int, optional): PSF kernel size. Defaults to PSF_KS.
+            rgb_img (torch.Tensor): RGB object image, shape [B, 3, H, W].
+            depth (torch.Tensor): Depth map in [mm], shape [B, 1, H, W].
+            psf_ks (int, optional): PSF kernel size in pixels. Defaults to PSF_KS.
             num_layers (int, optional): Number of depth layers. Defaults to 16.
 
         Returns:
-            img_left (tensor): [B, 3, H, W]
-            img_right (tensor): [B, 3, H, W]
+            img_left (torch.Tensor): Left sub-aperture image, shape [B, 3, H, W].
+            img_right (torch.Tensor): Right sub-aperture image, shape [B, 3, H, W].
         """
         # Convert depth to negative values
         if (depth > 0).any():

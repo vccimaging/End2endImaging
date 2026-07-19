@@ -7,17 +7,32 @@ from .phase import Phase
 
 
 class NURBSPhase(Phase):
-    """NURBS phase on a plane substrate.
+    """Diffractive phase surface parameterized by a NURBS surface.
 
-    This class implements a diffractive surface where the phase profile is
-    represented by a NURBS surface. The NURBS surface is defined by control
-    points arranged in a 2D grid, with knot vectors for both u and v directions.
+    The phase profile is the z-component of a NURBS (Non-Uniform Rational
+    B-Spline) surface defined by a 2D grid of control points and clamped knot
+    vectors in the u and v directions. The surface is evaluated with B-spline
+    basis functions via the Cox-de Boor recursion. The (x, y) ray coordinates
+    are normalized to the NURBS parameter domain [0, 1]; the returned phase is
+    in radians and wrapped to [0, 2π).
 
-    The surface is evaluated using B-spline basis functions and Cox-de Boor
-    recursion algorithm.
+    Attributes:
+        control_points (torch.Tensor): Control point coordinates (x, y, z) of
+            shape (control_points_u, control_points_v, 3); z is the phase [rad].
+        weights (torch.Tensor): Rational B-spline weights of shape
+            (control_points_u, control_points_v).
+        knots_u (torch.Tensor): Clamped knot vector in u of shape
+            (control_points_u + degree_u + 1,).
+        knots_v (torch.Tensor): Clamped knot vector in v of shape
+            (control_points_v + degree_v + 1,).
+        control_points_u (int): Number of control points in u.
+        control_points_v (int): Number of control points in v.
+        degree_u (int): B-spline degree in u.
+        degree_v (int): B-spline degree in v.
+        param_model (str): Parameterization tag, "nurbs".
 
     Reference:
-        [1] The NURBS Book by Piegl and Tiller
+        [1] The NURBS Book by Piegl and Tiller.
         [2] https://en.wikipedia.org/wiki/Non-uniform_rational_B-spline
     """
 
@@ -38,26 +53,28 @@ class NURBSPhase(Phase):
         is_square=True,
         device="cpu",
     ):
-        """Initialize NURBS phase surface.
+        """Initialize a NURBS phase surface.
 
         Args:
-            r: Radius of the surface
-            d: Distance to next surface
-            control_points_u: Number of control points in u direction (default: 8)
-            control_points_v: Number of control points in v direction (default: 8)
-            degree_u: Degree of B-spline in u direction (default: 3)
-            degree_v: Degree of B-spline in v direction (default: 3)
-            control_points: Optional 3D tensor of shape (control_points_u, control_points_v, 3)
-                           containing control point coordinates (x, y, z) where z is phase.
-                           If None, initialized with small random values.
-            weights: Optional 2D tensor of shape (control_points_u, control_points_v)
-                    containing weights for rational B-splines. If None, all weights = 1.
-            norm_radii: Normalization radius (default: r)
-            mat2: Material on the right side (default: "air")
-            pos_xy: Position in xy plane
-            vec_local: Local coordinate system vector
-            is_square: Whether the aperture is square
-            device: Computation device
+            r (float): Aperture radius of the surface [mm].
+            d (float): Axial distance to the next surface [mm].
+            control_points_u (int, optional): Number of control points in u. Defaults to 8.
+            control_points_v (int, optional): Number of control points in v. Defaults to 8.
+            degree_u (int, optional): B-spline degree in u. Defaults to 3.
+            degree_v (int, optional): B-spline degree in v. Defaults to 3.
+            control_points (torch.Tensor or None, optional): Control point coordinates
+                of shape (control_points_u, control_points_v, 3) holding (x, y, z) where
+                z is the phase [rad]. If None, x, y are placed on an even grid in [-1, 1]
+                and z is initialized with small random values (std 1e-3 [rad]). Defaults to None.
+            weights (torch.Tensor or None, optional): Rational B-spline weights of shape
+                (control_points_u, control_points_v). If None, all weights are 1. Defaults to None.
+            norm_radii (float or None, optional): Radius [mm] used to normalize (x, y) into
+                the parameter domain. If None, defaults to r. Defaults to None.
+            mat2 (str, optional): Material after the surface. Defaults to "air".
+            pos_xy (tuple, optional): Surface (x, y) position [mm]. Defaults to (0.0, 0.0).
+            vec_local (tuple, optional): Local surface normal direction. Defaults to (0.0, 0.0, 1.0).
+            is_square (bool, optional): Whether the aperture is square. Defaults to True.
+            device (str, optional): Computation device. Defaults to "cpu".
         """
         super().__init__(
             r=r,
@@ -80,43 +97,50 @@ class NURBSPhase(Phase):
         self.knots_u = self._generate_clamped_knots(control_points_u, degree_u)
         self.knots_v = self._generate_clamped_knots(control_points_v, degree_v)
 
-        # Initialize control points (x, y, z) where z represents phase
+        # Initialize control points (x, y, z) where z represents phase.
+        # Use the default dtype (not a hardcoded float32) so float64 runs stay
+        # double precision.
         if control_points is None:
             # Initialize with small random phase values
-            self.control_points = torch.randn(control_points_u, control_points_v, 3, device=device) * 1e-3
+            cp = torch.randn(control_points_u, control_points_v, 3, device=device) * 1e-3
             # Set x,y coordinates to be evenly spaced in [-1, 1] range
             u_coords = torch.linspace(0, 1, control_points_u, device=device)
             v_coords = torch.linspace(0, 1, control_points_v, device=device)
             u_grid, v_grid = torch.meshgrid(u_coords, v_coords, indexing='ij')
-            self.control_points[..., 0] = u_grid * 2 - 1  # x coordinates
-            self.control_points[..., 1] = v_grid * 2 - 1  # y coordinates
+            cp[..., 0] = u_grid * 2 - 1  # x coordinates
+            cp[..., 1] = v_grid * 2 - 1  # y coordinates
         else:
-            self.control_points = torch.tensor(control_points, dtype=torch.float32, device=device)
-            assert self.control_points.shape == (control_points_u, control_points_v, 3), (
+            cp = torch.as_tensor(control_points, dtype=torch.get_default_dtype(), device=device)
+            assert cp.shape == (control_points_u, control_points_v, 3), (
                 f"control_points must have shape ({control_points_u}, {control_points_v}, 3)"
             )
+        self.control_points = cp
 
         # Initialize weights for rational B-splines
         if weights is None:
-            self.weights = torch.ones(control_points_u, control_points_v, device=device)
+            w = torch.ones(control_points_u, control_points_v, device=device)
         else:
-            self.weights = torch.tensor(weights, dtype=torch.float32, device=device)
-            assert self.weights.shape == (control_points_u, control_points_v), (
+            w = torch.as_tensor(weights, dtype=torch.get_default_dtype(), device=device)
+            assert w.shape == (control_points_u, control_points_v), (
                 f"weights must have shape ({control_points_u}, {control_points_v})"
             )
+        self.weights = w
 
         self.param_model = "nurbs"
         self.to(device)
 
     def _generate_clamped_knots(self, n_control_points, degree):
-        """Generate clamped knot vector for B-spline.
+        """Generate a clamped knot vector for a B-spline.
+
+        The vector has degree+1 repeated zeros at the start and degree+1
+        repeated ones at the end, with interior knots evenly spaced in (0, 1).
 
         Args:
-            n_control_points: Number of control points
-            degree: B-spline degree
+            n_control_points (int): Number of control points.
+            degree (int): B-spline degree.
 
         Returns:
-            Knot vector tensor
+            knots (torch.Tensor): Knot vector of shape (n_control_points + degree + 1,).
         """
         n_knots = n_control_points + degree + 1
         knots = torch.zeros(n_knots)
@@ -134,15 +158,15 @@ class NURBSPhase(Phase):
         return knots
 
     def _find_knot_span(self, knots, degree, u):
-        """Find the knot span for parameter u.
+        """Find the knot span index containing parameter u (Piegl-Tiller FindSpan).
 
         Args:
-            knots: Knot vector
-            degree: B-spline degree
-            u: Parameter value
+            knots (torch.Tensor): Knot vector.
+            degree (int): B-spline degree.
+            u (torch.Tensor): Scalar parameter value in [0, 1].
 
         Returns:
-            Knot span index
+            span (int): Knot span index, clamped to [degree, n_control_points - 1].
         """
         n = len(knots) - degree - 2  # number of control points - 1
 
@@ -167,18 +191,20 @@ class NURBSPhase(Phase):
         return mid
 
     def _basis_functions(self, knots, degree, u, span):
-        """Compute B-spline basis functions using Cox-de Boor recursion.
+        """Compute the nonzero B-spline basis functions at parameter u.
 
-        This implements the standard Piegl-Tiller algorithm from "The NURBS Book".
+        Implements the standard Piegl-Tiller Cox-de Boor recursion from
+        "The NURBS Book". Only the degree+1 basis functions that are nonzero
+        on the given span are returned.
 
         Args:
-            knots: Knot vector
-            degree: B-spline degree
-            u: Parameter value
-            span: Knot span index
+            knots (torch.Tensor): Knot vector.
+            degree (int): B-spline degree.
+            u (torch.Tensor): Scalar parameter value in [0, 1].
+            span (int): Knot span index containing u.
 
         Returns:
-            Array of basis function values
+            N (torch.Tensor): Basis function values of shape (degree + 1,).
         """
         N = torch.zeros(degree + 1, dtype=torch.float32, device=knots.device)
         left = torch.zeros(degree + 1, dtype=torch.float32, device=knots.device)
@@ -207,13 +233,15 @@ class NURBSPhase(Phase):
         return N
 
     def _evaluate_nurbs_surface(self, u, v):
-        """Evaluate NURBS surface at parameter values (u, v).
+        """Evaluate the NURBS surface point at a single parameter pair (u, v).
 
         Args:
-            u, v: Parameter values (should be in [0, 1] range)
+            u (torch.Tensor): Scalar u parameter; clamped to [0, 1].
+            v (torch.Tensor): Scalar v parameter; clamped to [0, 1].
 
         Returns:
-            Surface point (x, y, z) where z is phase value
+            point (torch.Tensor): Surface point of shape (3,) holding (x, y, z),
+                where z is the phase value [rad].
         """
         # Clamp parameters to valid range
         u = torch.clamp(u, 0.0, 1.0)
@@ -257,10 +285,117 @@ class NURBSPhase(Phase):
 
         return point
 
+    # ------------------------------------------------------------------
+    # Vectorized evaluation (used by phi/dphi_dxy). Equivalent to looping the
+    # per-point _evaluate_nurbs_surface above, but without the Python per-point
+    # loop, which is millions of iterations for a phase map / ray bundle.
+    # ------------------------------------------------------------------
+    def _find_knot_span_batch(self, knots, degree, u):
+        """Find knot spans for a batch of parameters (vectorized FindSpan).
+
+        Args:
+            knots (torch.Tensor): Knot vector.
+            degree (int): B-spline degree.
+            u (torch.Tensor): Parameters of shape (N,).
+
+        Returns:
+            span (torch.Tensor): Knot span indices of shape (N,), clamped to
+                [degree, n_control_points - 1].
+        """
+        n = len(knots) - degree - 2  # last control-point index
+        span = torch.searchsorted(knots, u.contiguous(), right=True) - 1
+        return torch.clamp(span, degree, n)
+
+    def _basis_functions_batch(self, knots, degree, u, span):
+        """Compute B-spline basis functions for a batch of parameters.
+
+        Vectorized Cox-de Boor recursion mirroring `_basis_functions`, batched
+        over points; the Python loops run over the (small) degree, not over the
+        N points.
+
+        Args:
+            knots (torch.Tensor): Knot vector.
+            degree (int): B-spline degree.
+            u (torch.Tensor): Parameters of shape (N,).
+            span (torch.Tensor): Knot span indices of shape (N,).
+
+        Returns:
+            Nb (torch.Tensor): Basis function values of shape (N, degree + 1).
+        """
+        npts = u.shape[0]
+        dtype, device = u.dtype, u.device
+        Nb = torch.zeros(npts, degree + 1, dtype=dtype, device=device)
+        left = torch.zeros(npts, degree + 1, dtype=dtype, device=device)
+        right = torch.zeros(npts, degree + 1, dtype=dtype, device=device)
+        Nb[:, 0] = 1.0
+        for j in range(1, degree + 1):
+            left[:, j] = u - knots[span + 1 - j]
+            right[:, j] = knots[span + j] - u
+            saved = torch.zeros(npts, dtype=dtype, device=device)
+            for r in range(j):
+                denom = right[:, r + 1] + left[:, j - r]
+                safe = torch.where(denom != 0, denom, torch.ones_like(denom))
+                temp = torch.where(
+                    denom != 0, Nb[:, r] / safe, torch.zeros_like(denom)
+                )
+                Nb[:, r] = saved + right[:, r + 1] * temp
+                saved = left[:, j - r] * temp
+            Nb[:, j] = saved
+        return Nb
+
+    def _evaluate_z_batch(self, u, v):
+        """Evaluate the NURBS phase (z-component) for a batch of parameters.
+
+        Equivalent to `_evaluate_nurbs_surface(u, v)[2]` per point. Clamped knot
+        vectors keep the span in [degree, n_control_points - 1], so every local
+        control-point index is in bounds and no per-point bounds check is needed.
+
+        Args:
+            u (torch.Tensor): u parameters of shape (N,); clamped to [0, 1].
+            v (torch.Tensor): v parameters of shape (N,); clamped to [0, 1].
+
+        Returns:
+            z (torch.Tensor): Phase values [rad] of shape (N,).
+        """
+        du, dv = self.degree_u, self.degree_v
+        u = torch.clamp(u, 0.0, 1.0)
+        v = torch.clamp(v, 0.0, 1.0)
+
+        span_u = self._find_knot_span_batch(self.knots_u, du, u)  # [N]
+        span_v = self._find_knot_span_batch(self.knots_v, dv, v)  # [N]
+        Nu = self._basis_functions_batch(self.knots_u, du, u, span_u)  # [N, du+1]
+        Nv = self._basis_functions_batch(self.knots_v, dv, v, span_v)  # [N, dv+1]
+
+        npts = u.shape[0]
+        i_off = torch.arange(du + 1, device=u.device)
+        j_off = torch.arange(dv + 1, device=u.device)
+        cp_i = span_u.unsqueeze(1) - du + i_off  # [N, du+1]
+        cp_j = span_v.unsqueeze(1) - dv + j_off  # [N, dv+1]
+        cp_i_e = cp_i.unsqueeze(2).expand(npts, du + 1, dv + 1)
+        cp_j_e = cp_j.unsqueeze(1).expand(npts, du + 1, dv + 1)
+
+        basis = Nu.unsqueeze(2) * Nv.unsqueeze(1)  # [N, du+1, dv+1]
+        w = self.weights[cp_i_e, cp_j_e]  # [N, du+1, dv+1]
+        cz = self.control_points[cp_i_e, cp_j_e, 2]  # phase (z) [N, du+1, dv+1]
+        weight = w * basis
+        numer = (weight * cz).sum(dim=(1, 2))  # [N]
+        denom = weight.sum(dim=(1, 2))  # [N]
+        safe = torch.where(denom > 0, denom, torch.ones_like(denom))
+        return torch.where(denom > 0, numer / safe, numer)
 
     @classmethod
     def init_from_dict(cls, surf_dict):
-        """Initialize NURBS phase surface from dictionary."""
+        """Initialize a NURBS phase surface from a parameter dictionary.
+
+        Args:
+            surf_dict (dict): Surface parameters. Requires "r" and "d"; optional
+                keys include "mat2", "norm_radii", "control_points_u",
+                "control_points_v", "degree_u", "degree_v", "control_points",
+                and "weights".
+
+        Returns:
+            obj (NURBSPhase): The constructed NURBS phase surface.
+        """
         mat2 = surf_dict.get("mat2", "air")
         norm_radii = surf_dict.get("norm_radii", None)
         control_points_u = surf_dict.get("control_points_u", 8)
@@ -282,39 +417,36 @@ class NURBSPhase(Phase):
         # Load control points and weights
         control_points = surf_dict.get("control_points", None)
         if control_points is not None:
-            obj.control_points = torch.tensor(control_points, device=obj.device)
+            obj.control_points = torch.as_tensor(control_points, device=obj.device)
 
         weights = surf_dict.get("weights", None)
         if weights is not None:
-            obj.weights = torch.tensor(weights, device=obj.device)
+            obj.weights = torch.as_tensor(weights, device=obj.device)
 
         return obj
 
     def phi(self, x, y):
-        """Reference phase map at design wavelength using NURBS surface evaluation.
+        """Compute the reference phase map at the design wavelength.
+
+        Coordinates are normalized by `norm_radii` and mapped to the NURBS
+        parameter domain [0, 1]. Points outside the unit circle (normalized
+        radius greater than 1) are set to 0, and the result is wrapped to [0, 2π).
 
         Args:
-            x, y: Coordinate tensors
+            x (torch.Tensor): x coordinates [mm].
+            y (torch.Tensor): y coordinates [mm], same shape as x.
 
         Returns:
-            Phase values in radians at the specified coordinates
+            phi (torch.Tensor): Phase [rad] in [0, 2π), same shape as x.
         """
         # Normalize coordinates to [0, 1] range for NURBS parameter space
         x_norm = (x / self.norm_radii + 1.0) / 2.0  # Map [-1, 1] to [0, 1]
         y_norm = (y / self.norm_radii + 1.0) / 2.0  # Map [-1, 1] to [0, 1]
 
-        # Flatten for batch processing
-        x_flat = x_norm.flatten()
-        y_flat = y_norm.flatten()
-        batch_size = x_flat.shape[0]
-
-        # Evaluate NURBS surface for each point
-        phi_values = []
-        for i in range(batch_size):
-            point = self._evaluate_nurbs_surface(x_flat[i], y_flat[i])
-            phi_values.append(point[2])  # z-coordinate contains phase
-
-        phi = torch.stack(phi_values).reshape(x_norm.shape)
+        # Vectorized NURBS evaluation over all points (z-component is the phase).
+        phi = self._evaluate_z_batch(x_norm.flatten(), y_norm.flatten()).reshape(
+            x_norm.shape
+        )
 
         # Apply circular aperture mask (set phase to 0 outside unit circle)
         r_squared = (x / self.norm_radii)**2 + (y / self.norm_radii)**2
@@ -327,13 +459,18 @@ class NURBSPhase(Phase):
         return phi
 
     def dphi_dxy(self, x, y):
-        """Calculate phase derivatives (dphi/dx, dphi/dy) using NURBS surface.
+        """Compute phase derivatives (dphi/dx, dphi/dy) by central differences.
+
+        Uses a finite-difference step of 1e-6 [mm] on `phi`. Points outside the
+        unit circle (normalized radius greater than 1) are set to 0.
 
         Args:
-            x, y: Coordinate tensors
+            x (torch.Tensor): x coordinates [mm].
+            y (torch.Tensor): y coordinates [mm], same shape as x.
 
         Returns:
-            dphidx, dphidy: Phase derivatives in x and y directions
+            dphidx (torch.Tensor): Phase derivative along x [rad/mm], same shape as x.
+            dphidy (torch.Tensor): Phase derivative along y [rad/mm], same shape as x.
         """
         # For numerical differentiation, compute phi at slightly offset positions
         eps = 1e-6
@@ -357,7 +494,23 @@ class NURBSPhase(Phase):
         return dphidx, dphidy
 
     def get_optimizer_params(self, lrs=[1e-4, 1e-2], optim_mat=False):
-        """Generate optimizer parameters for NURBS control points."""
+        """Build optimizer parameter groups for the NURBS control points.
+
+        Control points are always optimized at `lrs[0]`. If a second learning
+        rate is given, the weights are also optimized at `lrs[1]`.
+
+        Args:
+            lrs (list, optional): Learning rates [control_points_lr, weights_lr].
+                Defaults to [1e-4, 1e-2].
+            optim_mat (bool, optional): Must be False; material parameters are not
+                optimized for phase surfaces. Defaults to False.
+
+        Returns:
+            params (list): List of parameter-group dicts for `torch.optim`.
+
+        Raises:
+            AssertionError: If optim_mat is True.
+        """
         params = []
 
         # Enable gradients for control points (only z-coordinate for phase)
@@ -377,7 +530,11 @@ class NURBSPhase(Phase):
         return params
 
     def save_ckpt(self, save_path="./nurbs_doe.pth"):
-        """Save NURBS DOE parameters."""
+        """Save NURBS DOE parameters to a checkpoint file.
+
+        Args:
+            save_path (str, optional): Output path. Defaults to "./nurbs_doe.pth".
+        """
         torch.save(
             {
                 "param_model": "nurbs",
@@ -394,20 +551,30 @@ class NURBSPhase(Phase):
         )
 
     def load_ckpt(self, load_path="./nurbs_doe.pth"):
-        """Load NURBS DOE parameters."""
+        """Load NURBS DOE parameters from a checkpoint file.
+
+        Args:
+            load_path (str, optional): Checkpoint path. Defaults to "./nurbs_doe.pth".
+        """
         ckpt = torch.load(load_path)
         self.param_model = ckpt["param_model"]
-        self.control_points = ckpt["control_points"].to(self.device)
-        self.weights = ckpt["weights"].to(self.device)
         self.control_points_u = ckpt["control_points_u"]
         self.control_points_v = ckpt["control_points_v"]
+        self.control_points = ckpt["control_points"].to(self.device)
+        self.weights = ckpt["weights"].to(self.device)
         self.degree_u = ckpt["degree_u"]
         self.degree_v = ckpt["degree_v"]
         self.knots_u = ckpt["knots_u"].to(self.device)
         self.knots_v = ckpt["knots_v"].to(self.device)
 
     def surf_dict(self):
-        """Return surface parameters."""
+        """Return surface parameters as a serializable dictionary.
+
+        Returns:
+            surf_dict (dict): Surface parameters (control points, weights, knot
+                vectors, degrees, radii, distance, and material) suitable for
+                JSON export.
+        """
         surf_dict = {
             "type": "Phase",
             "r": self.r,
@@ -424,5 +591,7 @@ class NURBSPhase(Phase):
             "norm_radii": round(self.norm_radii, 4),
             "d": round(self.d.item(), 4),
             "mat2": self.mat2.get_name(),
+            "(mat2_n)": round(float(self.mat2.n), 4),
+            "(mat2_V)": round(float(self.mat2.V), 4),
         }
         return surf_dict
