@@ -154,10 +154,14 @@ class DefocusLens(Lens):
         coc_pixel = coc_pixel.unsqueeze(-1).unsqueeze(-1)  # Shape [N, 1, 1], broadcasts with [ks, ks]
         coc_pixel_radius = coc_pixel / 2
 
-        # Create coordinate meshgrid
+        # Create an integer-centered coordinate grid. In particular, an even
+        # kernel (the project default is 64) must still contain an explicit
+        # origin sample. The previous half-pixel grid left an exact-focus CoC
+        # mask empty, yielding a zero PSF instead of a peak-preserving delta.
+        coords = torch.arange(ks, device=self.device, dtype=coc_pixel.dtype) - ks // 2
         x, y = torch.meshgrid(
-            torch.linspace(-ks / 2 + 1 / 2, ks / 2 - 1 / 2, ks, device=self.device),
-            torch.linspace(-ks / 2 + 1 / 2, ks / 2 - 1 / 2, ks, device=self.device),
+            coords,
+            coords,
             indexing="xy",
         )
         distance_sq = x**2 + y**2
@@ -399,9 +403,6 @@ class DefocusLens(Lens):
         depth_map,
         psf_ks=PSF_KS,
         num_layers=16,
-        method=None,
-        depth_min=None,
-        depth_max=None,
     ):
         """Occlusion-aware RGBD rendering for defocus lens.
 
@@ -416,13 +417,6 @@ class DefocusLens(Lens):
                 (or [B, H, W]). Values must be positive.
             psf_ks (int, optional): PSF kernel size in pixels. Defaults to PSF_KS.
             num_layers (int, optional): Number of depth layers. Defaults to 16.
-            method (str, optional): Rendering method selector accepted for API
-                compatibility. Defocus PSFs are spatially invariant, so all
-                supported methods use the same implementation.
-            depth_min (float, optional): Minimum depth used to sample layers.
-                Defaults to the minimum value in ``depth_map``.
-            depth_max (float, optional): Maximum depth used to sample layers.
-                Defaults to the maximum value in ``depth_map``.
 
         Returns:
             img_render (torch.Tensor): Rendered image, shape [B, C, H, W].
@@ -436,14 +430,8 @@ class DefocusLens(Lens):
         if len(depth_map.shape) == 3:
             depth_map = depth_map.unsqueeze(1)  # [B, H, W] -> [B, 1, H, W]
 
-        if isinstance(psf_ks, str):
-            method = psf_ks
-            psf_ks = PSF_KS
-        if method not in (None, "psf_patch", "psf_map", "psf_pixel"):
-            raise ValueError(f"Invalid render_rgbd method: {method}")
-
-        depth_min = depth_map.min() if depth_min is None else depth_min
-        depth_max = depth_map.max() if depth_max is None else depth_max
+        depth_min = depth_map.min()
+        depth_max = depth_map.max()
 
         # Sample depth layers
         disp_ref, depths_ref = self._sample_depth_layers(depth_min, depth_max, num_layers)
