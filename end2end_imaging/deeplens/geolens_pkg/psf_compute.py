@@ -377,9 +377,12 @@ class GeoLensPSF:
             f"Ray sampling {spp} is too small for coherent ray tracing, which may lead to inaccurate simulation."
         )
         if self.dtype != torch.float64:
-            raise ValueError(
-                "Coherent pupil propagation requires a float64 lens; call lens.astype(torch.float64)."
-            )
+            if torch.get_default_dtype() == torch.float64:
+                self.astype(torch.float64)
+            else:
+                raise ValueError(
+                    "Coherent pupil propagation requires a float64 lens; call lens.astype(torch.float64)."
+                )
 
         sensor_w, sensor_h = self.sensor_size
         device = self.device
@@ -488,9 +491,12 @@ class GeoLensPSF:
         """
         wvln = self.primary_wvln if wvln is None else wvln
         if self.dtype != torch.float64:
-            raise ValueError(
-                "Huygens propagation requires a float64 lens; call lens.astype(torch.float64)."
-            )
+            if torch.get_default_dtype() == torch.float64:
+                self.astype(torch.float64)
+            else:
+                raise ValueError(
+                    "Huygens propagation requires a float64 lens; call lens.astype(torch.float64)."
+                )
 
         sensor_w, sensor_h = self.sensor_size
         pixel_size = self.pixel_size
