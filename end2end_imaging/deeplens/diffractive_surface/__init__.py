@@ -10,22 +10,5 @@ from .rank1 import Rank1
 from .rotational_symmetric import RotationallySymmetric
 from .thinlens import ThinLens
 from .zernike import Zernike
-from .._compat import accept_legacy_surface_distance
-
-for _surface_cls in (
-    DiffractiveSurface,
-    Binary2,
-    DiffractedRotation,
-    Fresnel,
-    Grating,
-    Pixel2D,
-    Rank1,
-    RotationallySymmetric,
-    ThinLens,
-    Zernike,
-):
-    accept_legacy_surface_distance(_surface_cls)
-
-del _surface_cls
 
 __all__ = ["DiffractiveSurface", "DiffractedRotation", "Fresnel", "Grating", "Pixel2D", "Rank1", "RotationallySymmetric", "ThinLens", "Zernike", "Binary2"]

@@ -155,14 +155,9 @@ class Aspheric(Surface):
             ai2_val = ai[0]  # Extract the a2 coefficient
             ai = ai[1:]      # Remaining: [a4, a6, a8, ...]
 
-        distance_kwargs = (
-            {"d_next": surf_dict["d_next"]}
-            if "d_next" in surf_dict
-            else {"d": surf_dict["d"]}
-        )
-
         return cls(
             r=surf_dict["r"],
+            d_next=surf_dict["d_next"],
             c=c,
             k=surf_dict["k"],
             ai=ai,
@@ -172,7 +167,6 @@ class Aspheric(Surface):
             vec_local=surf_dict.get("vec_local", [0.0, 0.0, 1.0]),
             is_square=surf_dict.get("is_square", False),
             device=surf_dict.get("device", "cpu"),
-            **distance_kwargs,
         )
 
     def _get_curvature_params(self):

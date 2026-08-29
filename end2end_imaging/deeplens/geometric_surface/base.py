@@ -456,12 +456,10 @@ class Surface(DeepObj):
         Returns:
             ray (Ray): Ray expressed in the local surface coordinate system.
         """
-        # Axial position is normally represented by the lens reference frame.
-        # Embedded-package compatibility may retain a legacy absolute position
-        # for surfaces constructed directly with ``d=...``.
-        axial_offset = getattr(self, "_legacy_d", torch.zeros_like(self.pos_x))
+        # Axial position is represented by the lens reference frame. Only the
+        # surface-local lateral offset belongs in this transform.
         offset = torch.stack(
-            [self.pos_x, self.pos_y, axial_offset]
+            [self.pos_x, self.pos_y, torch.zeros_like(self.pos_x)]
         ).expand_as(ray.o)
         ray.o = ray.o - offset
 
@@ -494,9 +492,8 @@ class Surface(DeepObj):
             ray.d = F.normalize(ray.d, p=2, dim=-1)
 
         # Shift ray origin back to the surface reference frame.
-        axial_offset = getattr(self, "_legacy_d", torch.zeros_like(self.pos_x))
         offset = torch.stack(
-            [self.pos_x, self.pos_y, axial_offset]
+            [self.pos_x, self.pos_y, torch.zeros_like(self.pos_x)]
         ).expand_as(ray.o)
         ray.o = ray.o + offset
 

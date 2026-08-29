@@ -90,21 +90,15 @@ class Spheric(Surface):
         else:
             c = surf_dict["c"]
 
-        distance_kwargs = (
-            {"d_next": surf_dict["d_next"]}
-            if "d_next" in surf_dict
-            else {"d": surf_dict["d"]}
-        )
-
         return cls(
             c=c,
             r=surf_dict["r"],
+            d_next=surf_dict["d_next"],
             mat2=surf_dict["mat2"],
             pos_xy=surf_dict.get("pos_xy", [0.0, 0.0]),
             vec_local=surf_dict.get("vec_local", [0.0, 0.0, 1.0]),
             is_square=surf_dict.get("is_square", False),
             device=surf_dict.get("device", "cpu"),
-            **distance_kwargs,
         )
 
     def _sag(self, x, y):
