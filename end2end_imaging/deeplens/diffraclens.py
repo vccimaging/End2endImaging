@@ -1,5 +1,5 @@
 # Copyright 2026 KAUST Computational Imaging Group, Xinge Yang and DeepLens contributors.
-# This file is part of DeepLens (https://github.com/singer-yang/DeepLens).
+# This file is part of DeepLens (https://github.com/vccimaging/DeepLens).
 #
 # Licensed under the Apache License, Version 2.0.
 # See LICENSE file in the project root for full license information.
@@ -20,7 +20,6 @@ import torch.nn.functional as F
 from torchvision.utils import save_image
 
 from .config import DEFAULT_WAVE, DEPTH, EPSILON, PSF_KS, WAVE_RGB
-from .lens import Lens
 from .diffractive_surface import (
     Binary2,
     DiffractedRotation,
@@ -32,8 +31,9 @@ from .diffractive_surface import (
     Zernike,
 )
 from .imgsim import conv_psf
-from .utils import diff_float
+from .lens import Lens
 from .light import ComplexWave
+from .utils import diff_float
 
 
 class DiffractiveLens(Lens):
@@ -303,20 +303,18 @@ class DiffractiveLens(Lens):
         wvln = self.primary_wvln if wvln is None else wvln
         # On-axis PSF for an object at infinity. psf() returns [ks, ks] for a
         # single point; add a leading channel dim for conv_psf -> (1, ks, ks).
-        psf = self.psf(
-            points=[0.0, 0.0, float("-inf")], wvln=wvln, ks=ks
-        ).unsqueeze(0)
+        psf = self.psf(points=[0.0, 0.0, float("-inf")], wvln=wvln, ks=ks).unsqueeze(0)
         img_render = conv_psf(img, psf, method=method)
         return img_render
 
-    def psf(self, points=None, wvln=None, ks=PSF_KS, depth=None, **kwargs):
+    def psf(self, points, wvln=None, ks=PSF_KS, **kwargs):
         """Calculate the monochromatic PSF for one or more point sources.
 
         Off-axis point sources are supported. The signature follows
         `Lens.psf` and `GeoLens.psf`.
 
         Args:
-            points (torch.Tensor or list, optional): Point source coordinates, shape
+            points (torch.Tensor or list): Point source coordinates, shape
                 [N, 3] or [3]. x, y are normalised to [-1, 1] (relative to the
                 sensor half-width/height); z is the depth in mm (negative;
                 -inf for an object at infinity).
@@ -337,8 +335,6 @@ class DiffractiveLens(Lens):
                 - upsample_factor (int): Field upsampling factor to meet the
                   Nyquist sampling constraint. When None (default), a factor
                   is chosen so the field resolution is close to 4000 x 4000.
-            depth (float, optional): Backward-compatible on-axis source depth.
-                Used only when ``points`` is omitted. Defaults to infinity.
 
         Returns:
             psf (torch.Tensor): PSF intensity map (normalised to sum 1), shape
@@ -354,9 +350,6 @@ class DiffractiveLens(Lens):
         upsample_factor = kwargs.get("upsample_factor", None)
         wvln = self.primary_wvln if wvln is None else wvln
         ks = max(int(self.sensor_res[0]), int(self.sensor_res[1])) if ks is None else ks
-        if points is None:
-            depth = float("inf") if depth is None else depth
-            points = [0.0, 0.0, depth]
         if not torch.is_tensor(points):
             points = torch.tensor(points, dtype=torch.float64)
         single_point = points.dim() == 1
@@ -387,16 +380,8 @@ class DiffractiveLens(Lens):
                 # so the source physically images to the inverted side (an object
                 # at +x focuses to -x), consistent with the finite-depth point
                 # source below; the inversion is undone by the flip further down.
-                if hasattr(self, "foclen"):
-                    theta_x = math.atan(-x_norm * sensor_w / 2 / self.foclen)
-                    theta_y = math.atan(-y_norm * sensor_h / 2 / self.foclen)
-                elif x_norm == 0.0 and y_norm == 0.0:
-                    theta_x = 0.0
-                    theta_y = 0.0
-                else:
-                    raise AttributeError(
-                        "off-axis DiffractiveLens.psf requires foclen"
-                    )
+                theta_x = math.atan(-x_norm * sensor_w / 2 / self.foclen)
+                theta_y = math.atan(-y_norm * sensor_h / 2 / self.foclen)
                 inp_wave = ComplexWave.plane_wave(
                     wvln=wvln,
                     z=0.0,
@@ -407,17 +392,9 @@ class DiffractiveLens(Lens):
                 ).to(self.device)
             else:
                 # Finite-depth source: spherical wave from the object point.
-                if hasattr(self, "foclen"):
-                    scale = -depth / self.foclen  # object height / image height
-                    obj_x = x_norm * scale * sensor_w / 2
-                    obj_y = y_norm * scale * sensor_h / 2
-                elif x_norm == 0.0 and y_norm == 0.0:
-                    obj_x = 0.0
-                    obj_y = 0.0
-                else:
-                    raise AttributeError(
-                        "off-axis DiffractiveLens.psf requires foclen"
-                    )
+                scale = -depth / self.foclen  # object height / image height
+                obj_x = x_norm * scale * sensor_w / 2
+                obj_y = y_norm * scale * sensor_h / 2
                 inp_wave = ComplexWave.point_wave(
                     point=[obj_x, obj_y, depth],
                     phy_size=field_size,
@@ -517,11 +494,19 @@ class DiffractiveLens(Lens):
             d = float(self.surf_d(i))
             surf_l = float(getattr(surf, "w", default_l))
             ax.plot(
-                [d, d], [-surf_l / 2, surf_l / 2], "orange", linestyle="--", dashes=[1, 1]
+                [d, d],
+                [-surf_l / 2, surf_l / 2],
+                "orange",
+                linestyle="--",
+                dashes=[1, 1],
             )
             ax.text(
-                d, surf_l / 2 * 1.08, f"{type(surf).__name__}\n(z={d:.1f} mm)",
-                ha="center", va="bottom", fontsize=8,
+                d,
+                surf_l / 2 * 1.08,
+                f"{type(surf).__name__}\n(z={d:.1f} mm)",
+                ha="center",
+                va="bottom",
+                fontsize=8,
             )
 
         # Draw the sensor plane as a thin rectangle.
@@ -529,13 +514,21 @@ class DiffractiveLens(Lens):
         sensor_l = float(self.sensor_size[1])
         width = max(0.01 * d_sensor, 0.2)
         rect = plt.Rectangle(
-            (d_sensor - width / 2, -sensor_l / 2), width, sensor_l,
-            facecolor="none", edgecolor="black", linewidth=1,
+            (d_sensor - width / 2, -sensor_l / 2),
+            width,
+            sensor_l,
+            facecolor="none",
+            edgecolor="black",
+            linewidth=1,
         )
         ax.add_patch(rect)
         ax.text(
-            d_sensor, sensor_l / 2 * 1.08, f"Sensor\n(z={d_sensor:.1f} mm)",
-            ha="center", va="bottom", fontsize=8,
+            d_sensor,
+            sensor_l / 2 * 1.08,
+            f"Sensor\n(z={d_sensor:.1f} mm)",
+            ha="center",
+            va="bottom",
+            fontsize=8,
         )
 
         # Optical axis.
