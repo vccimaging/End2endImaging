@@ -157,11 +157,10 @@ def validate(lens, net, epoch, args, val_loader):
     device = args["device"]
     result_dir = args["result_dir"]
     depth = args["train"]["depth"]
-    bs = args["train"]["bs"]
     ks = args["train"]["psf_ks"]
     psf_grid = args["train"]["psf_grid"]
     points = lens.point_source_grid(
-        depth=depth, grid=psf_grid * 2 - 1, quater=True
+        depth=depth, grid=(psf_grid * 2 - 1,) * 2, quater=True
     ).reshape(-1, 3)
 
     # Scores
@@ -173,17 +172,13 @@ def validate(lens, net, epoch, args, val_loader):
 
     # Loop over the validation set in batches
     for _, (img_org, labels) in tqdm(enumerate(val_loader)):
-        if img_org.shape[0] != bs:
-            continue
-
         # Get images and labels
         img_org = img_org.to(device)
         labels = labels.to(device)
 
         # Render image with PSF map
-        img_render = conv_psf(img_org, psf)
-        img_render = torch.cat(img_render)
-        labels = labels.repeat(psf_grid**2)
+        img_render = torch.cat([conv_psf(img_org, kernel) for kernel in psf])
+        labels = labels.repeat(psf.shape[0])
 
         # Forward pass and prediction
         outputs = net(img_render)
@@ -208,7 +203,6 @@ def validate(lens, net, epoch, args, val_loader):
 def train(args, lens: GeoLens, net):
     device = args["device"]
     result_dir = args["result_dir"]
-    bs = args["train"]["bs"]
     ks = args["train"]["psf_ks"]
     psf_grid = args["train"]["psf_grid"]
     spp = args["train"]["spp"]
@@ -235,31 +229,18 @@ def train(args, lens: GeoLens, net):
 
     # ==> Training
     logging.info("==> Start training.")
-    points = lens.point_source_grid(depth=depth, grid=psf_grid, quater=True).reshape(
+    points = lens.point_source_grid(depth=depth, grid=(psf_grid,) * 2, quater=True).reshape(
         -1, 3
     )
-    for epoch in range(args["train"]["epochs"] + 1):
-        # =============================
-        # Evaluation
-        # =============================
-        if epoch % 1 == 0 and epoch > 0:
-            net.eval()
-            lens.correct_shape()
-            lens.write_lens_json(f"{result_dir}/epoch{epoch}.json")
-            lens.analysis(f"{result_dir}/epoch{epoch}")
-            validate(lens, net, epoch, args, val_loader)
-
+    for epoch in range(epochs):
         # =============================
         # Training
         # =============================
-        net.train()
+        # The pretrained classifier is a fixed lens-design objective.
+        net.eval()
 
         # ==> Task-driven lens design: a well-trained network serves as lens design objective
         for ii, (img_org, labels) in tqdm(enumerate(train_loader)):
-            # Continue is wrong batch size
-            if img_org.shape[0] != bs:
-                continue
-
             # Get images and labels
             img_org = img_org.to(device)
             labels = labels.to(device)
@@ -282,7 +263,7 @@ def train(args, lens: GeoLens, net):
 
             # Loss
             L_classi = cri_classi(labels_pred, labels)
-            L_reg = lens.loss_self_intersec()
+            L_reg, _ = lens.loss_bound()
 
             L = L_classi + 0.02 * L_reg
 
@@ -314,6 +295,11 @@ def train(args, lens: GeoLens, net):
                 lens.analysis(f"{result_dir}/epoch{epoch}_batch{ii}")
 
         logging.info(f"Epoch{epoch + 1} finishs.")
+
+        lens.correct_shape()
+        lens.write_lens_json(f"{result_dir}/epoch{epoch + 1}.json")
+        lens.analysis(f"{result_dir}/epoch{epoch + 1}")
+        validate(lens, net, epoch + 1, args, val_loader)
 
 
 if __name__ == "__main__":

@@ -30,6 +30,6 @@ network:
   pretrained: './ckpt/f2.8/doublet/classi1_resnet_high.pth'
   lr: !!float 1e-5
 
-imagenet_train_dir: TODO:
-imagenet_val_dir: TODO:
-imagenet_test_dir: TODO:
+imagenet_train_dir: 'TODO:'
+imagenet_val_dir: 'TODO:'
+imagenet_test_dir: 'TODO:'

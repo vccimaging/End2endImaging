@@ -382,8 +382,10 @@ class Surface(DeepObj):
 
     def to_local_coord(self, ray):
         """Transform a ray from the surface reference frame to local coordinates."""
+        # Only legacy standalone surfaces store an absolute axial position.
+        axial_offset = getattr(self, "_legacy_d", torch.zeros_like(self.pos_x))
         offset = torch.stack(
-            [self.pos_x, self.pos_y, torch.zeros_like(self.pos_x)]
+            [self.pos_x, self.pos_y, axial_offset]
         ).expand_as(ray.o)
         ray.o = ray.o - offset
 
@@ -400,8 +402,9 @@ class Surface(DeepObj):
             ray.d = self._apply_rotation(ray.d, self._R_to_global)
             ray.d = F.normalize(ray.d, p=2, dim=-1)
 
+        axial_offset = getattr(self, "_legacy_d", torch.zeros_like(self.pos_x))
         offset = torch.stack(
-            [self.pos_x, self.pos_y, torch.zeros_like(self.pos_x)]
+            [self.pos_x, self.pos_y, axial_offset]
         ).expand_as(ray.o)
         ray.o = ray.o + offset
         return ray

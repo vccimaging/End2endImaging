@@ -133,7 +133,7 @@ def end2end_train(lens: GeoLens, net, args):
     lens.analysis(f"{result_dir}/epoch0", render=False)
 
     # ==> Training
-    for epoch in range(args["train"]["epochs"] + 1):
+    for epoch in range(epochs):
         # ==> Train 1 epoch
         for img_org in tqdm(train_loader):
             img_org = img_org.to(device)
@@ -164,12 +164,11 @@ def end2end_train(lens: GeoLens, net, args):
             # Line 5: step
             # ========================================
             lens_optim.step()
+            net_sche.step()
+            lens_sche.step()
 
             if not args["DEBUG"]:
                 wandb.log({"loss_class": L_rec.detach().item()})
-
-        net_sche.step()
-        lens_sche.step()
 
         logging.info(f"Epoch{epoch + 1} finishs.")
 

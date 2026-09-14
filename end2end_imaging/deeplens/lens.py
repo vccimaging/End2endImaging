@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from deeplens import init_device
+from . import init_device
 
 from .base import DeepObj
 from .config import (
