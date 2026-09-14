@@ -1,5 +1,5 @@
 # Copyright 2026 KAUST Computational Imaging Group, Xinge Yang and DeepLens contributors.
-# This file is part of DeepLens (https://github.com/singer-yang/DeepLens).
+# This file is part of DeepLens (https://github.com/vccimaging/DeepLens).
 #
 # Licensed under the Apache License, Version 2.0.
 # See LICENSE file in the project root for full license information.
@@ -27,9 +27,9 @@ Reference:
 import numpy as np
 import torch
 
-from .lens import Lens
 from .config import EPSILON, PSF_KS
 from .imgsim import conv_psf_depth_interp, conv_psf_occlusion
+from .lens import Lens
 
 
 class DefocusLens(Lens):
@@ -151,7 +151,9 @@ class DefocusLens(Lens):
         coc_pixel = torch.clamp(
             coc_values / self.pixel_size, min=0.5
         )  # Shape [N], minimum 0.5 pixels
-        coc_pixel = coc_pixel.unsqueeze(-1).unsqueeze(-1)  # Shape [N, 1, 1], broadcasts with [ks, ks]
+        coc_pixel = coc_pixel.unsqueeze(-1).unsqueeze(
+            -1
+        )  # Shape [N, 1, 1], broadcasts with [ks, ks]
         coc_pixel_radius = coc_pixel / 2
 
         # Create an integer-centered coordinate grid. In particular, an even
@@ -420,13 +422,10 @@ class DefocusLens(Lens):
                 (or [B, H, W]). Values must be positive.
             psf_ks (int, optional): PSF kernel size in pixels. Defaults to PSF_KS.
             num_layers (int, optional): Number of depth layers. Defaults to 16.
-            method (str, optional): Rendering method selector accepted for API
-                compatibility. Defocus PSFs are spatially invariant, so all
-                supported methods use the same implementation.
-            depth_min (float, optional): Minimum depth used to sample layers.
-                Defaults to the minimum value in ``depth_map``.
-            depth_max (float, optional): Maximum depth used to sample layers.
-                Defaults to the maximum value in ``depth_map``.
+            method (str, optional): Legacy method selector. Defocus PSFs are
+                spatially invariant, so all supported methods are equivalent.
+            depth_min (float, optional): Near depth for layer sampling [mm].
+            depth_max (float, optional): Far depth for layer sampling [mm].
 
         Returns:
             img_render (torch.Tensor): Rendered image, shape [B, C, H, W].
@@ -450,7 +449,9 @@ class DefocusLens(Lens):
         depth_max = depth_map.max() if depth_max is None else depth_max
 
         # Sample depth layers
-        disp_ref, depths_ref = self._sample_depth_layers(depth_min, depth_max, num_layers)
+        disp_ref, depths_ref = self._sample_depth_layers(
+            depth_min, depth_max, num_layers
+        )
 
         # Compute PSF at each depth layer (spatially invariant, so patch_center=(0,0))
         points = torch.stack(
@@ -499,7 +500,9 @@ class DefocusLens(Lens):
         patch_center = (0.0, 0.0)
 
         # Calculate dual-pixel PSF at reference depths
-        depths_ref = torch.linspace(depth_min, depth_max, num_layers, device=self.device)
+        depths_ref = torch.linspace(
+            depth_min, depth_max, num_layers, device=self.device
+        )
         points = torch.stack(
             [
                 torch.full_like(depths_ref, patch_center[0]),
